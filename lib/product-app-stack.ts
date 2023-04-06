@@ -43,7 +43,8 @@ export class ProductAppStack extends cdk.Stack {
             PRODUCTS_TABLE: this.productsTable.tableName
           },
           runtime: lambda.Runtime.NODEJS_16_X,
-          layers: [this.productLayer]
+          layers: [this.productLayer],
+          tracing: lambda.Tracing.ACTIVE
         });
     }
 
@@ -65,7 +66,8 @@ export class ProductAppStack extends cdk.Stack {
             PRODUCTS_TABLE: this.productsTable.tableName
           },
           runtime: lambda.Runtime.NODEJS_16_X,
-          layers: [this.productLayer]
+          layers: [this.productLayer],
+          tracing: lambda.Tracing.ACTIVE
         });
     }
 
