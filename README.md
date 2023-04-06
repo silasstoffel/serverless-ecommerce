@@ -13,3 +13,4 @@ The `cdk.json` file tells the CDK Toolkit how to execute your app.
 * `cdk diff`        compare deployed stack with current state
 * `cdk synth`       emits the synthesized CloudFormation template
 * `cdk bootstrap`   runs this for create bucket in your aws account (IMPORTANT: Run this command only one time)
+* `cdk deploy --all --require-approval never`  deploy all stack and dot not require approval

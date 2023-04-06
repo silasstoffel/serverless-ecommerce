@@ -6,6 +6,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { ProductAppStack } from '../lib/product-app-stack';
 import { ECommerceGatewayStack } from '../lib/ecommerce-gateway-stack';
+import { ProductLayerStack } from '../lib/product-layer-stack';
 
 const env: cdk.Environment = {
     account: process.env.AWS_ACCOUNT_ID,
@@ -22,7 +23,10 @@ const tags = {
 
 const app = new cdk.App();
 
+const productLayerStack = new ProductLayerStack(app, 'ProductsLayerApp', { tags, env });
+
 const productAppStack = new ProductAppStack(app, 'ProductsApp', { tags, env });
+productAppStack.addDependency(productLayerStack);
 
 const eCommerceApiGateway = new ECommerceGatewayStack(
     app,

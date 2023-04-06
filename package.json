@@ -1,6 +1,6 @@
 {
   "name": "serverless-ecommerce",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "bin": {
     "serverless-ecommerce": "bin/serverless-ecommerce.js"
   },
