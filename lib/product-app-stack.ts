@@ -44,7 +44,9 @@ export class ProductAppStack extends cdk.Stack {
           },
           runtime: lambda.Runtime.NODEJS_16_X,
           layers: [this.productLayer],
-          tracing: lambda.Tracing.ACTIVE
+          tracing: lambda.Tracing.ACTIVE,
+          // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
     }
 
@@ -67,7 +69,9 @@ export class ProductAppStack extends cdk.Stack {
           },
           runtime: lambda.Runtime.NODEJS_16_X,
           layers: [this.productLayer],
-          tracing: lambda.Tracing.ACTIVE
+          tracing: lambda.Tracing.ACTIVE,
+          // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
     }
 
