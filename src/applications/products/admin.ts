@@ -93,7 +93,7 @@ async function produceEvent(
 
     return lambdaClient.invoke({
         FunctionName: invokeFuncName,
-        Payload: payload,
+        Payload: JSON.stringify(payload),
         InvocationType: 'RequestResponse' // sync
     }).promise();
 }
