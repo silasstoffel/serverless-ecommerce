@@ -9,13 +9,23 @@ import * as systemManager from 'aws-cdk-lib/aws-ssm';
 export class ProductAppStack extends cdk.Stack {
     public readonly productLoadHandler: LambdaNode.NodejsFunction;
     public readonly productsAdministrationHandler: LambdaNode.NodejsFunction;
+    public readonly productsEventsHandler: LambdaNode.NodejsFunction;
     public readonly productsTable: dynamodb.Table;
     private productLayer: lambda.ILayerVersion;
+    private productEventsLayer: lambda.ILayerVersion;
 
-    public constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    public constructor(
+        scope: Construct,
+        id: string,
+        private readonly props: ProductAppStackProps
+    ) {
       super(scope, id, props);
       
-      this.initProductLayer();
+      this.initLayers();
+      
+      this.productsEventsHandler = this.buildProductEventsFunction();
+      this.props.eventsTable.grantReadWriteData(this.productsEventsHandler);
+
       this.productsTable = this.buildProductsTable();
       this.productLoadHandler = this.buildFetchProductsFunction();
       this.productsAdministrationHandler = this.buildAdminProductsFunction();
@@ -23,9 +33,12 @@ export class ProductAppStack extends cdk.Stack {
       // IAM read/write data from products table
       this.productsTable.grantReadData(this.productLoadHandler);
       this.productsTable.grantWriteData(this.productsAdministrationHandler);
+
+      // Grant invoke
+      this.productsEventsHandler.grantInvoke(this.productsAdministrationHandler);      
     }
 
-    public buildFetchProductsFunction(): LambdaNode.NodejsFunction {
+    private buildFetchProductsFunction(): LambdaNode.NodejsFunction {
         const resourceId = 'ProductsFetch';
 
         return new LambdaNode.NodejsFunction(this, resourceId, {
@@ -50,7 +63,7 @@ export class ProductAppStack extends cdk.Stack {
         });
     }
 
-    public buildAdminProductsFunction(): LambdaNode.NodejsFunction {
+    private buildAdminProductsFunction(): LambdaNode.NodejsFunction {
         const resourceId = 'ProductsAdministration';
 
         return new LambdaNode.NodejsFunction(this, resourceId, {
@@ -65,17 +78,18 @@ export class ProductAppStack extends cdk.Stack {
           },
           logRetention: RetentionDays.THREE_DAYS,
           environment: {
-            PRODUCTS_TABLE: this.productsTable.tableName
+            PRODUCTS_TABLE: this.productsTable.tableName,
+            PRODUCTS_EVENTS_FUNC_NAME: this.productsEventsHandler.functionName
           },
           runtime: lambda.Runtime.NODEJS_16_X,
-          layers: [this.productLayer],
+          layers: [this.productLayer, this.productEventsLayer],
           tracing: lambda.Tracing.ACTIVE,
           // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
     }
 
-    public buildProductsTable(resourceId = 'ProductsDynamoDb', tableName = 'products'): dynamodb.Table{
+    private buildProductsTable(resourceId = 'ProductsDynamoDb', tableName = 'products'): dynamodb.Table{
         return new dynamodb.Table(this, resourceId, {
             tableName,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -89,8 +103,40 @@ export class ProductAppStack extends cdk.Stack {
         });
     }
 
-    public initProductLayer() {
+    private initLayers() {
         const productLayerArn = systemManager.StringParameter.valueForStringParameter(this, 'ProductLayerVersionArn');
         this.productLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'ProductLayerVersionArn', productLayerArn);
+
+        const productEventsLayerArn = systemManager.StringParameter.valueForStringParameter(this, 'ProductEventsLayerVersionArn');
+        this.productEventsLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'ProductEventsLayerVersionArn', productEventsLayerArn);
     }
+
+    private buildProductEventsFunction() {
+        const resourceId = 'ProductsEvents';
+
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/products/events.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(2),
+          bundling: {
+              minify: true,
+              sourceMap: false,
+          },
+          logRetention: RetentionDays.THREE_DAYS,
+          environment: {
+            EVENTS_TABLE: this.props.eventsTable.tableName
+          },
+          runtime: lambda.Runtime.NODEJS_16_X,
+          layers: [this.productEventsLayer],
+          tracing: lambda.Tracing.ACTIVE,
+          // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
+        });        
+    }
+}
+
+export interface ProductAppStackProps extends cdk.StackProps {
+    eventsTable: dynamodb.Table
 }

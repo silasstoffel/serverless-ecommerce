@@ -7,6 +7,7 @@ import * as cdk from 'aws-cdk-lib';
 import { ProductAppStack } from '../lib/product-app-stack';
 import { ECommerceGatewayStack } from '../lib/ecommerce-gateway-stack';
 import { ProductLayerStack } from '../lib/product-layer-stack';
+import { EventAppStack } from '../lib/event-app-stack';
 
 const env: cdk.Environment = {
     account: process.env.AWS_ACCOUNT_ID,
@@ -21,19 +22,26 @@ const tags = {
     env: 'production'
 };
 
+const props = { tags, env };
+
 const app = new cdk.App();
 
-const productLayerStack = new ProductLayerStack(app, 'ProductsLayerApp', { tags, env });
+const productLayerStack = new ProductLayerStack(app, 'ProductsLayerApp', props);
 
-const productAppStack = new ProductAppStack(app, 'ProductsApp', { tags, env });
+const eventAppStack = new EventAppStack(app, 'EventAppStack', props);
+
+const productAppStack = new ProductAppStack(app, 'ProductsApp', {
+    ...props,
+    eventsTable: eventAppStack.eventsTable
+});
 productAppStack.addDependency(productLayerStack);
+productAppStack.addDependency(eventAppStack);
 
 const eCommerceApiGateway = new ECommerceGatewayStack(
     app,
     ECommerceGatewayStack.resourceName,
     {
-        tags,
-        env,
+        ...props,
         fetchProductsHandler: productAppStack.productLoadHandler,
         adminProductsHandler: productAppStack.productsAdministrationHandler
     }
