@@ -104,10 +104,51 @@ export class ECommerceGatewayStack extends cdk.Stack {
         productsResource.addMethod('GET', loadProductsHandler);
         // GET /products/{id}
         productParamIDResource.addMethod('GET', loadProductsHandler);
+
+        const upsertProductValidator = new apiGateway.RequestValidator(this, 'UpSertProductValidator', {
+            restApi: api,
+            requestValidatorName: 'UpSertProductValidator',
+            validateRequestBody: true
+        });
+
+        const attrType = apiGateway.JsonSchemaType;
+        const productModel = new apiGateway.Model(this, 'ProductModel', {
+            restApi: api,
+            modelName: 'ProductModel',
+            description: 'Schema to create and update product',
+            schema: {
+                type: attrType.OBJECT,
+                properties: {
+                    productName: {
+                        type: attrType.STRING,
+                        minLength: 2,
+                    },
+                    code: {
+                        type: attrType.STRING,
+                        minLength: 2,
+                    },
+                    price: {
+                        type: attrType.NUMBER,                                        
+                    },
+                    model: {
+                        type: attrType.STRING,
+                    }
+                },
+                required: ['productName', 'code', 'price']
+            }
+        });
+
+        const upsertConfig = {
+            requestValidator: upsertProductValidator,
+            requestModels: {
+                'application/json': productModel,                
+            }
+        };
+
         // POST /products
-        productsResource.addMethod('POST', adminProductsHandler);
+        productsResource.addMethod('POST', adminProductsHandler, upsertConfig);
         // PUT /products/{id}
-        productParamIDResource.addMethod('PUT', adminProductsHandler);
+        productParamIDResource.addMethod('PUT', adminProductsHandler, upsertConfig);
         // DELETE /products/{id}
         productParamIDResource.addMethod('DELETE', adminProductsHandler);
     }
