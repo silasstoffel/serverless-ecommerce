@@ -33,8 +33,45 @@ export class ECommerceGatewayStack extends cdk.Stack {
         
         // GET /orders?email=option&id=optional
         ordersResource.addMethod('GET', ordersHandler);
+        
         // POST /orders
-        ordersResource.addMethod('POST', ordersHandler);
+        const orderCreateValidator =  new apiGateway.RequestValidator(this, 'OrderCreateValidator', {
+            restApi: api,
+            requestValidatorName: 'OrderCreateValidator',
+            validateRequestBody: true
+        });
+
+        const attributeType = apiGateway.JsonSchemaType;
+        const orderModelValidator = new apiGateway.Model(this, "OrderCreateSchema", {
+            modelName: 'OrderCreateSchema',
+            restApi: api,
+            schema: {
+                type: attributeType.OBJECT,
+                properties: {
+                    email: {
+                        type: attributeType.STRING,                        
+                    },
+                    productIds: {
+                        type: attributeType.ARRAY,
+                        minItems: 1,
+                        items: { type: attributeType.STRING}
+                    },
+                    payment: { type: attributeType.STRING, enum: ['CASH', 'DEBIT_CARD', 'CREDIT_CARD'] },
+                },
+                required: [
+                    'email',
+                    'productIds',
+                    'payment'
+                ]
+            }
+        });
+
+        ordersResource.addMethod('POST', ordersHandler, {
+            requestValidator: orderCreateValidator,
+            requestModels: {
+                'application/json': orderModelValidator
+            }
+        });
 
         // DELETE /orders?email=required&id=required
         const orderDeleteValidator =  new apiGateway.RequestValidator(this, 'OrderDeleteValidator', {
