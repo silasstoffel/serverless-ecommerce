@@ -19,29 +19,60 @@ export class ECommerceGatewayStack extends cdk.Stack {
         deployOptions,
         cloudWatchRole: true
       });
-
       
-      const loadProductsHandler = new apiGateway.LambdaIntegration(
-        props.fetchProductsHandler
-      );
+      this.createProductsRoutes(props, api);
+      this.createOrdersRoutes(props, api); 
+    }
 
-      const adminProductsHandler = new apiGateway.LambdaIntegration(
-        props.adminProductsHandler
-      );
+    private createOrdersRoutes(props: ECommerceGatewayStackProps, api: apiGateway.RestApi) {
+        const ordersHandler = new apiGateway.LambdaIntegration(
+            props.ordersHandler
+        );
 
-      const productsResource = api.root.addResource('products');
-      const productParamIDResource = productsResource.addResource('{id}');
+        const ordersResource = api.root.addResource('orders');
+        
+        // GET /orders?email=option&id=optional
+        ordersResource.addMethod('GET', ordersHandler);
+        // POST /orders
+        ordersResource.addMethod('POST', ordersHandler);
 
-      // GET /products
-      productsResource.addMethod('GET', loadProductsHandler);
-      // GET /products/{id}
-      productParamIDResource.addMethod('GET', loadProductsHandler);
-      // POST /products
-      productsResource.addMethod('POST', adminProductsHandler);    
-      // PUT /products/{id}
-      productParamIDResource.addMethod('PUT', adminProductsHandler);
-      // DELETE /products/{id}
-      productParamIDResource.addMethod('DELETE', adminProductsHandler);      
+        // DELETE /orders?email=required&id=required
+        const orderDeleteValidator =  new apiGateway.RequestValidator(this, 'OrderDeleteValidator', {
+            restApi: api,
+            requestValidatorName: 'OrderDeleteValidator',
+            validateRequestParameters: true
+        });
+        ordersResource.addMethod('DELETE', ordersHandler, {
+            requestParameters: {
+                'method.request.querystring.email': true,
+                'method.request.querystring.id': true,
+            },
+            requestValidator: orderDeleteValidator
+        });
+    }
+
+    private createProductsRoutes(props: ECommerceGatewayStackProps, api: apiGateway.RestApi) {
+        const loadProductsHandler = new apiGateway.LambdaIntegration(
+            props.fetchProductsHandler
+        );
+
+        const adminProductsHandler = new apiGateway.LambdaIntegration(
+            props.adminProductsHandler
+        );
+
+        const productsResource = api.root.addResource('products');
+        const productParamIDResource = productsResource.addResource('{id}');
+
+        // GET /products
+        productsResource.addMethod('GET', loadProductsHandler);
+        // GET /products/{id}
+        productParamIDResource.addMethod('GET', loadProductsHandler);
+        // POST /products
+        productsResource.addMethod('POST', adminProductsHandler);
+        // PUT /products/{id}
+        productParamIDResource.addMethod('PUT', adminProductsHandler);
+        // DELETE /products/{id}
+        productParamIDResource.addMethod('DELETE', adminProductsHandler);
     }
 
     private buildDeployOptionsFormApiGateway(): StageOptions {
@@ -67,4 +98,5 @@ export class ECommerceGatewayStack extends cdk.Stack {
 export interface ECommerceGatewayStackProps extends cdk.StackProps {
     fetchProductsHandler: LambdaNode.NodejsFunction;
     adminProductsHandler: LambdaNode.NodejsFunction;
+    ordersHandler: LambdaNode.NodejsFunction;
 }

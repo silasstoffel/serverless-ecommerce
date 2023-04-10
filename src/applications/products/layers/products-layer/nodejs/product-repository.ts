@@ -1,4 +1,3 @@
-
 import { DocumentClient } from 'aws-sdk/clients/dynamodb';
 import { v4 as uuid } from 'uuid'
 
@@ -33,6 +32,19 @@ export class ProductRepository {
 
         return data.Item ? data.Item as Product: null;
     }
+
+    public async findByIds(ids: string[]): Promise<Product[]> {        
+        const keys: { id: string }[] = [];
+        ids.forEach((id) => keys.push({ id }));
+
+        const records = await this.dynamoDbClient.batchGet({
+             RequestItems: {
+                [this.tableName]: { Keys: keys }
+             }
+        }).promise();
+
+        return records.Responses![this.tableName] as Product[];
+    }    
 
     public async create(product: Product): Promise<Product> {
         product.id = uuid();

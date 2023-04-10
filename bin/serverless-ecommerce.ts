@@ -8,6 +8,8 @@ import { ProductAppStack } from '../lib/product-app-stack';
 import { ECommerceGatewayStack } from '../lib/ecommerce-gateway-stack';
 import { ProductLayerStack } from '../lib/product-layer-stack';
 import { EventAppStack } from '../lib/event-app-stack';
+import { OrderAppStack } from '../lib/order-app-stack';
+import { OrderLayerStack } from '../lib/order-layer-stack';
 
 const env: cdk.Environment = {
     account: process.env.AWS_ACCOUNT_ID,
@@ -37,14 +39,24 @@ const productAppStack = new ProductAppStack(app, 'ProductsApp', {
 productAppStack.addDependency(productLayerStack);
 productAppStack.addDependency(eventAppStack);
 
+const orderLayerStack = new OrderLayerStack(app, 'OrdersLayerApp', props);
+const orderAppStack = new OrderAppStack(app, 'OrderAppStack', {
+    ...props,
+    productTable: productAppStack.productsTable
+});
+orderAppStack.addDependency(productAppStack);
+orderAppStack.addDependency(orderLayerStack);
+
 const eCommerceApiGateway = new ECommerceGatewayStack(
     app,
     ECommerceGatewayStack.resourceName,
     {
         ...props,
         fetchProductsHandler: productAppStack.productLoadHandler,
-        adminProductsHandler: productAppStack.productsAdministrationHandler
+        adminProductsHandler: productAppStack.productsAdministrationHandler,
+        ordersHandler: orderAppStack.ordersHandler
     }
 );
 
 eCommerceApiGateway.addDependency(productAppStack);
+eCommerceApiGateway.addDependency(orderAppStack);
