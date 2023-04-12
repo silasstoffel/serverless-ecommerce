@@ -1,8 +1,9 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import { DynamoDB } from 'aws-sdk';
+import { DynamoDB, SNS } from 'aws-sdk';
 import * as AwsXRay from 'aws-xray-sdk';
 import { Product, ProductRepository } from '/opt/nodejs/products-layer';
 import { OrderRepository, Order } from '/opt/nodejs/orders-layer';
+import { OrderEvent, OrderEventSchema, OrderEventType } from '/opt/nodejs/orders-events-layer';
 import { jsonResponse } from 'src/shared/response';
 import { OrderRequest, OrderResponse, OrderProductResponse } from './types/order.types';
 
@@ -10,8 +11,10 @@ AwsXRay.captureAWS(require('aws-sdk'));
 
 const productsTable = process.env.PRODUCTS_TABLE!;
 const ordersTable = process.env.ORDERS_TABLE!;
+const orderEventsTopicARN = process.env.ORDER_EVENTS_TOPIC_ARN!
 
 const dynamoDb = new DynamoDB.DocumentClient();
+const SNSClient = new SNS();
 
 const productRepository = new ProductRepository(dynamoDb, productsTable);
 const orderRepository = new OrderRepository(dynamoDb, ordersTable);
@@ -73,7 +76,8 @@ export async function handler(
 
         const order = buildOrder(orderRequest, products);
         const data = await orderRepository.create(order);
-
+        const publishResult = await produceEvent(order, OrderEventType.CREATED, lambdaRequestId);
+        console.log(`Message publish:${publishResult.MessageId} - OrderId:${data.sk}`);
         console.log('Order was created.');
         return jsonResponse(201, convertOrderToResponse(data));
     }
@@ -85,6 +89,8 @@ export async function handler(
         try {
             const data = await orderRepository.delete(String(id), String(email));
             console.log('Order deleted.');
+            const publishResult = await produceEvent(data, OrderEventType.DELETED, lambdaRequestId);
+            console.log(`Message publish:${publishResult.MessageId} - OrderId:${data.sk}`);
             return jsonResponse(200, convertOrderToResponse(data));
         } catch(err) {
             return jsonResponse(404, { code: 'NOT_FOUND', message: 'Some product not found.'});
@@ -145,4 +151,29 @@ function convertOrderToResponse(order: Order): OrderResponse {
             carrier: order.shipping.carrier
         }
     }
+}
+
+async function produceEvent(order: Order, eventType: OrderEventType, lambdaRequestId: string) {    
+    const codes: string[] = [];
+    order.products.forEach((item) => codes.push(item.code));
+
+    const message: OrderEvent = {
+        email: order.pk,
+        orderId: order.sk!,
+        billing: order.billing,
+        shipping: order.shipping,
+        productCodes: codes,
+        requestId: lambdaRequestId
+    };
+    
+    const envelope: OrderEventSchema = {
+        eventType: eventType,
+        occurredAt: new Date(),
+        data: JSON.stringify(message)
+    };
+
+    return SNSClient.publish({
+        TopicArn: orderEventsTopicARN,
+        Message: JSON.stringify(envelope)
+    }).promise();
 }

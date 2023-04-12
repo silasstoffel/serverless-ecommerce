@@ -20,5 +20,18 @@ export class OrderLayerStack extends cdk.Stack {
         parameterName: 'OrderLayerVersionArn',
         stringValue: orderLayer.layerVersionArn,
       });
+
+      const orderEventLayer = new lambda.LayerVersion(this, "OrderEventsLayer",  {
+        code: lambda.Code.fromAsset('./src/applications/orders/layers/order-events-layer'),
+        compatibleRuntimes: [lambda.Runtime.NODEJS_16_X],
+        layerVersionName: 'OrderEventsLayer',
+        removalPolicy: cdk.RemovalPolicy.DESTROY
+      });
+
+      // Store layer ARN in AWS System manager
+      new systemManager.StringParameter(this, 'OrderEventsLayerVersionArn', {
+        parameterName: 'OrderEventsLayerVersionArn',
+        stringValue: orderEventLayer.layerVersionArn,
+      });      
     }
 }

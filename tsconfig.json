@@ -32,6 +32,9 @@
         ],
         "/opt/nodejs/orders-layer": [
             "./src/applications/orders/layers/order-layer/nodejs/order-repository"
+        ],
+        "/opt/nodejs/orders-events-layer": [
+            "./src/applications/orders/layers/order-events-layer/nodejs/order-event"
         ]
     }
   },

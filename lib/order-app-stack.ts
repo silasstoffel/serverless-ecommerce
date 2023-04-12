@@ -5,13 +5,17 @@ import { Construct } from 'constructs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as systemManager from 'aws-cdk-lib/aws-ssm';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as sub from 'aws-cdk-lib/aws-sns-subscriptions';
 
 export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
     
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
+    private orderEventLayer: lambda.ILayerVersion;
     private orderTable: dynamodb.Table;
+    private orderEventsTopic: sns.Topic;
 
     public constructor(
         scope: Construct,
@@ -22,8 +26,10 @@ export class OrderAppStack extends cdk.Stack {
       
       this.createOrdersTable();
       this.createLayers();
+      this.createTopics();
 
       this.ordersHandler = this.buildOrdersLambda();
+      this.orderEventsTopic.grantPublish(this.ordersHandler);
 
       this.createPermissions();
     }
@@ -44,10 +50,15 @@ export class OrderAppStack extends cdk.Stack {
           logRetention: RetentionDays.THREE_DAYS,
           environment: {
             PRODUCTS_TABLE: this.props.productTable.tableName,
-            ORDERS_TABLE: this.orderTable.tableName
+            ORDERS_TABLE: this.orderTable.tableName,
+            ORDER_EVENTS_TOPIC_ARN: this.orderEventsTopic.topicArn
           },
           runtime: lambda.Runtime.NODEJS_16_X,
-          layers: [this.productLayer, this.orderLayer],
+          layers: [
+            this.productLayer,
+            this.orderLayer,
+            this.orderEventLayer
+          ],
           tracing: lambda.Tracing.ACTIVE,
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
@@ -83,12 +94,25 @@ export class OrderAppStack extends cdk.Stack {
             'OrderLayerVersionArn',
             systemManager.StringParameter.valueForStringParameter(this, 'OrderLayerVersionArn')
         );
+
+        this.orderEventLayer = lambda.LayerVersion.fromLayerVersionArn(
+            this,
+            'OrderEventLayerVersionArn',
+            systemManager.StringParameter.valueForStringParameter(this, 'OrderEventLayerVersionArn')
+        );
     }
 
     private createPermissions() {
         this.orderTable.grantReadWriteData(this.ordersHandler);
         // Adding read permission for external table (product context).
         this.props.productTable.grantReadData(this.ordersHandler);
+    }
+
+    private createTopics() {
+        this.orderEventsTopic = new sns.Topic(this, 'OrderEventsTopic', {
+            displayName: 'Order events topic',
+            topicName: 'order-events',                        
+        });
     }
 }
 
