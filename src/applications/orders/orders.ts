@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { DynamoDB, SNS } from 'aws-sdk';
 import * as AwsXRay from 'aws-xray-sdk';
+import { v4 as uuid } from 'uuid';
 import { Product, ProductRepository } from '/opt/nodejs/products-layer';
 import { OrderRepository, Order } from '/opt/nodejs/orders-layer';
 import { OrderEvent, OrderEventSchema, OrderEventType } from '/opt/nodejs/orders-events-layer';
@@ -75,11 +76,14 @@ export async function handler(
         }
 
         const order = buildOrder(orderRequest, products);
-        const data = await orderRepository.create(order);
-        const publishResult = await produceEvent(order, OrderEventType.CREATED, lambdaRequestId);
-        console.log(`Message publish:${publishResult.MessageId} - OrderId:${data.sk}`);
+        const createPromise = orderRepository.create(order);
+        const publishPromise = produceEvent(order, OrderEventType.CREATED, lambdaRequestId);
+        
+        const results = await Promise.all([createPromise, publishPromise]);
+
+        console.log(`Message publish:${results[1].MessageId} - OrderId:${order.sk}`);
         console.log('Order was created.');
-        return jsonResponse(201, convertOrderToResponse(data));
+        return jsonResponse(201, convertOrderToResponse(order));
     }
 
     if (method === 'DELETE') {
@@ -115,6 +119,8 @@ function buildOrder(payload: OrderRequest, products: Product[]): Order {
     
     return {
         pk: payload.email,
+        sk: uuid(),
+        createdAt: Date.now(),
         billing: {
             payment: payload.payment,
             totalOrder
@@ -124,7 +130,7 @@ function buildOrder(payload: OrderRequest, products: Product[]): Order {
             carrier: payload.shipping.carrier
         },
         products: orderProducts
-    }
+    };
 }
 
 function convertOrderToResponse(order: Order): OrderResponse {

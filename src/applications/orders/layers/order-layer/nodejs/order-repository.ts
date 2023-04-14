@@ -1,6 +1,4 @@
-
 import { DocumentClient } from 'aws-sdk/clients/dynamodb';
-import { v4 as uuid } from 'uuid';
 
 export enum ShippingType {
     FAST = 'FAST',
@@ -68,9 +66,6 @@ export class OrderRepository {
     }
 
     public async create(product: Order): Promise<Order> {
-        product.sk = uuid();
-        product.createdAt = Date.now();
-
         await this.dynamoDbClient.put({
             TableName: this.tableName,
             Item: product
