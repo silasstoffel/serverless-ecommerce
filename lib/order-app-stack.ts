@@ -12,6 +12,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
     public readonly orderEventsHandler: LambdaNode.NodejsFunction;
+    public readonly paymentProcessorHandler: LambdaNode.NodejsFunction;
     
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
@@ -37,6 +38,17 @@ export class OrderAppStack extends cdk.Stack {
       this.orderEventsHandler = this.buildOrdersEventsLambda();
       this.orderEventsTopic.addSubscription(new sub.LambdaSubscription(this.orderEventsHandler));
 
+      this.paymentProcessorHandler = this.buildPaymentProcessorLambda();
+      this.orderEventsTopic.addSubscription(
+        new sub.LambdaSubscription(this.paymentProcessorHandler, {
+            filterPolicy: {
+                eventType: sns.SubscriptionFilter.stringFilter({
+                    allowlist: ['CREATED']
+                })
+            }
+        })
+      );
+
       this.createPermissions();
     }
 
@@ -59,6 +71,26 @@ export class OrderAppStack extends cdk.Stack {
           },
           runtime: lambda.Runtime.NODEJS_16_X,
           layers: [this.orderEventLayer],
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
+        });
+    }
+
+    private buildPaymentProcessorLambda(): LambdaNode.NodejsFunction {
+        const resourceId = 'PaymentProcessor';
+
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/orders/order-payment-processor.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(5),
+          bundling: {
+              minify: true,
+              sourceMap: false,
+          },
+          logRetention: RetentionDays.ONE_DAY,
+          runtime: lambda.Runtime.NODEJS_16_X,
           tracing: lambda.Tracing.ACTIVE,
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });

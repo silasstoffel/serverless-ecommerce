@@ -180,6 +180,12 @@ async function produceEvent(order: Order, eventType: OrderEventType, lambdaReque
 
     return SNSClient.publish({
         TopicArn: orderEventsTopicARN,
-        Message: JSON.stringify(envelope)
+        Message: JSON.stringify(envelope),
+        MessageAttributes: {
+            eventType: {
+                DataType: 'String',
+                StringValue: eventType
+            }
+        }
     }).promise();
 }
