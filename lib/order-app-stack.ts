@@ -7,9 +7,11 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as systemManager from 'aws-cdk-lib/aws-ssm';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sub from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
+    public readonly orderEventsHandler: LambdaNode.NodejsFunction;
     
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
@@ -31,7 +33,35 @@ export class OrderAppStack extends cdk.Stack {
       this.ordersHandler = this.buildOrdersLambda();
       this.orderEventsTopic.grantPublish(this.ordersHandler);
 
+      // create lambda (orderEvents) and subscribe to events from the order topic(sns)
+      this.orderEventsHandler = this.buildOrdersEventsLambda();
+      this.orderEventsTopic.addSubscription(new sub.LambdaSubscription(this.orderEventsHandler));
+
       this.createPermissions();
+    }
+
+    private buildOrdersEventsLambda(): LambdaNode.NodejsFunction {
+        const resourceId = 'OrdersEvents';
+
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/orders/order-events.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(5),
+          bundling: {
+              minify: true,
+              sourceMap: false,
+          },
+          logRetention: RetentionDays.THREE_DAYS,
+          environment: {
+            EVENTS_TABLE:  this.props.eventsTable.tableName  
+          },
+          runtime: lambda.Runtime.NODEJS_16_X,
+          layers: [this.orderEventLayer],
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
+        });
     }
 
     private buildOrdersLambda(): LambdaNode.NodejsFunction {
@@ -97,8 +127,8 @@ export class OrderAppStack extends cdk.Stack {
 
         this.orderEventLayer = lambda.LayerVersion.fromLayerVersionArn(
             this,
-            'OrderEventLayerVersionArn',
-            systemManager.StringParameter.valueForStringParameter(this, 'OrderEventLayerVersionArn')
+            'OrderEventsLayerVersionArn',
+            systemManager.StringParameter.valueForStringParameter(this, 'OrderEventsLayerVersionArn')
         );
     }
 
@@ -106,6 +136,19 @@ export class OrderAppStack extends cdk.Stack {
         this.orderTable.grantReadWriteData(this.ordersHandler);
         // Adding read permission for external table (product context).
         this.props.productTable.grantReadData(this.ordersHandler);
+
+        // orderEvents lambda assumes only police to put items
+        const policy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            resources: [this.props.eventsTable.tableArn],
+            actions: ['dynamodb:PutItem'],
+            conditions: {
+                ['ForAllValues:StringLike']: {
+                    'dynamodb:LeadingKeys': ['#order_*']
+                }
+            }
+        });
+        this.orderEventsHandler.addToRolePolicy(policy);
     }
 
     private createTopics() {
@@ -117,5 +160,6 @@ export class OrderAppStack extends cdk.Stack {
 }
 
 export interface OrderAppStackProps extends cdk.StackProps {
-    productTable: dynamodb.Table
+    productTable: dynamodb.Table,
+    eventsTable: dynamodb.Table
 }

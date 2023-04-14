@@ -32,6 +32,6 @@ export class OrderLayerStack extends cdk.Stack {
       new systemManager.StringParameter(this, 'OrderEventsLayerVersionArn', {
         parameterName: 'OrderEventsLayerVersionArn',
         stringValue: orderEventLayer.layerVersionArn,
-      });      
+      });
     }
 }
