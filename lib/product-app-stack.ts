@@ -5,6 +5,7 @@ import { Construct } from 'constructs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as systemManager from 'aws-cdk-lib/aws-ssm';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class ProductAppStack extends cdk.Stack {
     public readonly productLoadHandler: LambdaNode.NodejsFunction;
@@ -24,18 +25,34 @@ export class ProductAppStack extends cdk.Stack {
       this.initLayers();
       
       this.productsEventsHandler = this.buildProductEventsFunction();
-      this.props.eventsTable.grantReadWriteData(this.productsEventsHandler);
 
       this.productsTable = this.buildProductsTable();
       this.productLoadHandler = this.buildFetchProductsFunction();
       this.productsAdministrationHandler = this.buildAdminProductsFunction();
 
-      // IAM read/write data from products table
-      this.productsTable.grantReadData(this.productLoadHandler);
-      this.productsTable.grantWriteData(this.productsAdministrationHandler);
+      this.setPermissions();
+    }
 
-      // Grant invoke
-      this.productsEventsHandler.grantInvoke(this.productsAdministrationHandler);      
+    private setPermissions(): void {
+        // Grant PutITem from productsEventsHandler
+        const police = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['dynamodb:PutItem'],
+            resources: [this.props.eventsTable.tableArn],
+            conditions: {
+                ['ForAllValues:StringLike']: {
+                    'dynamodb:LeadingKeys': ['#product_*']
+                }
+            }
+        });
+        this.productsEventsHandler.addToRolePolicy(police);
+
+        // IAM read/write data from products table
+        this.productsTable.grantReadData(this.productLoadHandler);
+        this.productsTable.grantWriteData(this.productsAdministrationHandler);
+
+        // Grant invoke
+        this.productsEventsHandler.grantInvoke(this.productsAdministrationHandler);         
     }
 
     private buildFetchProductsFunction(): LambdaNode.NodejsFunction {
