@@ -56,20 +56,25 @@ export class OrderAppStack extends cdk.Stack {
     }
 
     private createTopicSubscription(): void {
+
+        const createdOrderFilterPolicy = {
+            eventType: sns.SubscriptionFilter.stringFilter({
+                allowlist: ['CREATED']
+            })
+        };
+
         // lambda --> sns topic
         this.orderEventsTopic.addSubscription(
             new sub.LambdaSubscription(this.paymentProcessorHandler, {
-                filterPolicy: {
-                    eventType: sns.SubscriptionFilter.stringFilter({
-                        allowlist: ['CREATED']
-                    })
-                }
+                filterPolicy: createdOrderFilterPolicy
             })
         );
 
         // sqs --> sns topic
         this.orderEventsTopic.addSubscription(
-            new sub.SqsSubscription(this.orderEventsQueue)
+            new sub.SqsSubscription(this.orderEventsQueue, {
+                filterPolicy: createdOrderFilterPolicy
+            })
         );
     }
 
