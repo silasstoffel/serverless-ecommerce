@@ -1,4 +1,4 @@
-import { SNSEvent, SNSMessage, Context } from 'aws-lambda';
+import { SNSEvent, Context } from 'aws-lambda';
 import * as AwsXRay from 'aws-xray-sdk';
 
 AwsXRay.captureAWS(require('aws-sdk'));

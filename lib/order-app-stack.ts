@@ -8,11 +8,16 @@ import * as systemManager from 'aws-cdk-lib/aws-ssm';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as sub from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambdaEventSource from 'aws-cdk-lib/aws-lambda-event-sources';
 
 export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
     public readonly orderEventsHandler: LambdaNode.NodejsFunction;
     public readonly paymentProcessorHandler: LambdaNode.NodejsFunction;
+    private orderEventsMailHandler: LambdaNode.NodejsFunction;
+
+    private orderEventsQueue: sqs.Queue;
     
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
@@ -30,6 +35,7 @@ export class OrderAppStack extends cdk.Stack {
       this.createOrdersTable();
       this.createLayers();
       this.createTopics();
+      this.createQueues();
 
       this.ordersHandler = this.buildOrdersLambda();
       this.orderEventsTopic.grantPublish(this.ordersHandler);
@@ -39,17 +45,32 @@ export class OrderAppStack extends cdk.Stack {
       this.orderEventsTopic.addSubscription(new sub.LambdaSubscription(this.orderEventsHandler));
 
       this.paymentProcessorHandler = this.buildPaymentProcessorLambda();
-      this.orderEventsTopic.addSubscription(
-        new sub.LambdaSubscription(this.paymentProcessorHandler, {
-            filterPolicy: {
-                eventType: sns.SubscriptionFilter.stringFilter({
-                    allowlist: ['CREATED']
-                })
-            }
-        })
+      
+      this.orderEventsMailHandler = this.buildOrderEmailLambda();
+      this.orderEventsMailHandler.addEventSource(
+        new lambdaEventSource.SqsEventSource(this.orderEventsQueue)
       );
 
+      this.createTopicSubscription();  
       this.createPermissions();
+    }
+
+    private createTopicSubscription(): void {
+        // lambda --> sns topic
+        this.orderEventsTopic.addSubscription(
+            new sub.LambdaSubscription(this.paymentProcessorHandler, {
+                filterPolicy: {
+                    eventType: sns.SubscriptionFilter.stringFilter({
+                        allowlist: ['CREATED']
+                    })
+                }
+            })
+        );
+
+        // sqs --> sns topic
+        this.orderEventsTopic.addSubscription(
+            new sub.SqsSubscription(this.orderEventsQueue)
+        );
     }
 
     private buildOrdersEventsLambda(): LambdaNode.NodejsFunction {
@@ -95,7 +116,27 @@ export class OrderAppStack extends cdk.Stack {
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
     }
+    
+    private buildOrderEmailLambda(): LambdaNode.NodejsFunction {
+        const resourceId = 'OrderEmail';
 
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/orders/order-email.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(5),
+          bundling: {
+              minify: true,
+              sourceMap: false,
+          },
+          logRetention: RetentionDays.ONE_DAY,
+          runtime: lambda.Runtime.NODEJS_16_X,
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
+          layers: [this.orderEventLayer]
+        });
+    }
     private buildOrdersLambda(): LambdaNode.NodejsFunction {
         const resourceId = 'Orders';
 
@@ -164,7 +205,7 @@ export class OrderAppStack extends cdk.Stack {
         );
     }
 
-    private createPermissions() {
+    private createPermissions(): void {
         this.orderTable.grantReadWriteData(this.ordersHandler);
         // Adding read permission for external table (product context).
         this.props.productTable.grantReadData(this.ordersHandler);
@@ -181,12 +222,21 @@ export class OrderAppStack extends cdk.Stack {
             }
         });
         this.orderEventsHandler.addToRolePolicy(policy);
+
+        // Lambda (orderEventsMailHandler) can receive messages from the order events queue.
+        this.orderEventsQueue.grantConsumeMessages(this.orderEventsMailHandler);
     }
 
-    private createTopics() {
+    private createTopics(): void {
         this.orderEventsTopic = new sns.Topic(this, 'OrderEventsTopic', {
             displayName: 'Order events topic',
             topicName: 'order-events',                        
+        });
+    }
+
+    private createQueues(): void {
+        this.orderEventsQueue = new sqs.Queue(this, 'OrderEventsQueue', {
+            queueName: 'order-events',
         });
     }
 }
