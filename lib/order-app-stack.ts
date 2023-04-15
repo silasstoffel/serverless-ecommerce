@@ -48,7 +48,11 @@ export class OrderAppStack extends cdk.Stack {
       
       this.orderEventsMailHandler = this.buildOrderEmailLambda();
       this.orderEventsMailHandler.addEventSource(
-        new lambdaEventSource.SqsEventSource(this.orderEventsQueue)
+        new lambdaEventSource.SqsEventSource(this.orderEventsQueue, {
+            batchSize: 5,
+            enabled: true,
+            maxBatchingWindow: cdk.Duration.seconds(90)
+        })
       );
 
       this.createTopicSubscription();  
