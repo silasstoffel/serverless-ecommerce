@@ -244,8 +244,17 @@ export class OrderAppStack extends cdk.Stack {
     }
 
     private createQueues(): void {
+        const orderEventsDLQ = new sqs.Queue(this, 'OrderEventsDLQ', {
+            queueName: 'order-events-dlq',
+            retentionPeriod: cdk.Duration.days(14)
+        });
+
         this.orderEventsQueue = new sqs.Queue(this, 'OrderEventsQueue', {
             queueName: 'order-events',
+            deadLetterQueue: {
+                queue: orderEventsDLQ,
+                maxReceiveCount: 3
+            }
         });
     }
 }
