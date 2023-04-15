@@ -6,6 +6,7 @@ import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as systemManager from 'aws-cdk-lib/aws-ssm';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 
 export class ProductAppStack extends cdk.Stack {
     public readonly productLoadHandler: LambdaNode.NodejsFunction;
@@ -131,6 +132,11 @@ export class ProductAppStack extends cdk.Stack {
     private buildProductEventsFunction() {
         const resourceId = 'ProductsEvents';
 
+        const dlq = new sqs.Queue(this, resourceId, {
+            queueName: 'product-events-lambda-dlq',
+            retentionPeriod: cdk.Duration.days(2)
+        });
+
         return new LambdaNode.NodejsFunction(this, resourceId, {
           functionName: resourceId,
           entry: './src/applications/products/events.ts',
@@ -149,8 +155,11 @@ export class ProductAppStack extends cdk.Stack {
           layers: [this.productEventsLayer],
           tracing: lambda.Tracing.ACTIVE,
           // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
-          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
-        });        
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
+          deadLetterQueueEnabled: true,
+          deadLetterQueue: dlq,
+          retryAttempts: 1
+        });
     }
 }
 
