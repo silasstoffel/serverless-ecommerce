@@ -132,7 +132,7 @@ export class ProductAppStack extends cdk.Stack {
     private buildProductEventsFunction() {
         const resourceId = 'ProductsEvents';
 
-        const dlq = new sqs.Queue(this, resourceId, {
+        const dlq = new sqs.Queue(this, 'ProductEventsLambdaDLQ', {
             queueName: 'product-events-lambda-dlq',
             retentionPeriod: cdk.Duration.days(2)
         });
