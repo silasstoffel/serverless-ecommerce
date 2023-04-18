@@ -21,5 +21,5 @@ export interface OrderResponse {
         payment: PaymentType,
         totalOrder: number
     },
-    products: OrderProductResponse[]
+    products?: OrderProductResponse[]
 }

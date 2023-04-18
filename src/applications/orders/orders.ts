@@ -61,7 +61,7 @@ export async function handler(
                 return jsonResponse(200, response);                
             }
         }
-        const orders = await orderRepository.findAll();
+        const orders = await orderRepository.findAll(OrderRepository.viewWithoutProduct);
         const response = orders.map((item) => convertOrderToResponse(item));
         return jsonResponse(200, response);
     }
@@ -137,7 +137,7 @@ function convertOrderToResponse(order: Order): OrderResponse {
     const orderProducts: OrderProductResponse[] = [];
     let totalOrder = 0;
 
-    order.products.forEach(product => {
+    order?.products?.forEach(product => {
         totalOrder += product.price;
         const { code, price } = product;
         orderProducts.push({ code, price });
@@ -147,7 +147,7 @@ function convertOrderToResponse(order: Order): OrderResponse {
         id: order.sk!,
         email: order.pk,
         createdAt: order.createdAt!,
-        products: orderProducts,
+        products: orderProducts ?? undefined,
         billing: {
             payment: order.billing.payment,
             totalOrder: order.billing.totalOrder        
@@ -161,7 +161,7 @@ function convertOrderToResponse(order: Order): OrderResponse {
 
 async function produceEvent(order: Order, eventType: OrderEventType, lambdaRequestId: string) {    
     const codes: string[] = [];
-    order.products.forEach((item) => codes.push(item.code));
+    order?.products?.forEach((item) => codes.push(item.code));
 
     const message: OrderEvent = {
         email: order.pk,

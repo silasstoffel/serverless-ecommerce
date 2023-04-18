@@ -36,30 +36,37 @@ export interface Order {
         payment: PaymentType,
         totalOrder: number
     },
-    products: OrderProduct[]
+    products?: OrderProduct[]
 };
 
 export class OrderRepository {
+
+    public static readonly viewWithoutProduct = ['pk', 'sk', 'createdAt', 'shipping', 'billing'];
+
     public constructor(
         private readonly dynamoDbClient: DocumentClient,
         private readonly tableName: string
     ) {}
 
-    public async findAll(): Promise<Order[]> {
+    public async findAll(attributes: string[] = []): Promise<Order[]> {
+        const attrs = attributes.length ? attributes.join(',') : undefined;
         const data = await this.dynamoDbClient.scan({
-            TableName: this.tableName,                      
+            TableName: this.tableName,
+            ProjectionExpression: attrs
         }).promise();
 
         return data.Items as Order[];
     }
 
-    public async findByEmail(email: string): Promise<Order[]> {
+    public async findByEmail(email: string, attributes: string[] = []): Promise<Order[]> {
+        const attrs = attributes.length ? attributes.join(',') : undefined;
         const data = await this.dynamoDbClient.query({
             TableName: this.tableName,
             KeyConditionExpression: 'pk = :email',
             ExpressionAttributeValues: {
                 ':email': email 
-            }
+            },
+            ProjectionExpression: attrs
         }).promise();
 
         return data.Items as Order[];
@@ -74,10 +81,12 @@ export class OrderRepository {
         return product;
     }
 
-    public async find(id: string, email: string): Promise<Order | null> {
+    public async find(id: string, email: string, attributes: string[] = []): Promise<Order | null> {
+        const attrs = attributes.length ? attributes.join(',') : undefined;
         const data = await this.dynamoDbClient.get({
             Key: { pk: email, sk: id },
-            TableName: this.tableName, 
+            TableName: this.tableName,
+            ProjectionExpression: attrs
         }).promise();
 
         return data.Item ? data.Item as Order: null;
