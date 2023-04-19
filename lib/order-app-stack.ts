@@ -143,9 +143,13 @@ export class OrderAppStack extends cdk.Stack {
           runtime: lambda.Runtime.NODEJS_16_X,
           tracing: lambda.Tracing.ACTIVE,
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
-          layers: [this.orderEventLayer]
+          layers: [this.orderEventLayer],
+          environment: {
+            EMAIL_FROM: 'silasstofel@hotmail.com',
+          }
         });
     }
+
     private buildOrdersLambda(): LambdaNode.NodejsFunction {
         const resourceId = 'Orders';
 
@@ -234,6 +238,14 @@ export class OrderAppStack extends cdk.Stack {
 
         // Lambda (orderEventsMailHandler) can receive messages from the order events queue.
         this.orderEventsQueue.grantConsumeMessages(this.orderEventsMailHandler);
+
+        const sendMailPolicy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+            resources: ['*']
+        });
+
+        this.orderEventsMailHandler.addToRolePolicy(sendMailPolicy);
     }
 
     private createTopics(): void {
