@@ -15,10 +15,12 @@ export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
     public readonly orderEventsHandler: LambdaNode.NodejsFunction;
     public readonly paymentProcessorHandler: LambdaNode.NodejsFunction;
+    public readonly orderEventsFetchHandler: LambdaNode.NodejsFunction;
+
     private orderEventsMailHandler: LambdaNode.NodejsFunction;
 
     private orderEventsQueue: sqs.Queue;
-    
+
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
     private orderEventLayer: lambda.ILayerVersion;
@@ -30,8 +32,8 @@ export class OrderAppStack extends cdk.Stack {
         id: string,
         private readonly props: OrderAppStackProps
     ) {
-      super(scope, id, props);      
-      
+      super(scope, id, props);
+
       this.createOrdersTable();
       this.createLayers();
       this.createTopics();
@@ -45,7 +47,7 @@ export class OrderAppStack extends cdk.Stack {
       this.orderEventsTopic.addSubscription(new sub.LambdaSubscription(this.orderEventsHandler));
 
       this.paymentProcessorHandler = this.buildPaymentProcessorLambda();
-      
+
       this.orderEventsMailHandler = this.buildOrderEmailLambda();
       this.orderEventsMailHandler.addEventSource(
         new lambdaEventSource.SqsEventSource(this.orderEventsQueue, {
@@ -55,7 +57,9 @@ export class OrderAppStack extends cdk.Stack {
         })
       );
 
-      this.createTopicSubscription();  
+      this.orderEventsFetchHandler = this.buildOrderEventsFetchLambda();
+
+      this.createTopicSubscription();
       this.createPermissions();
     }
 
@@ -97,7 +101,7 @@ export class OrderAppStack extends cdk.Stack {
           },
           logRetention: RetentionDays.THREE_DAYS,
           environment: {
-            EVENTS_TABLE:  this.props.eventsTable.tableName  
+            EVENTS_TABLE:  this.props.eventsTable.tableName
           },
           runtime: lambda.Runtime.NODEJS_16_X,
           layers: [this.orderEventLayer],
@@ -125,7 +129,7 @@ export class OrderAppStack extends cdk.Stack {
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
     }
-    
+
     private buildOrderEmailLambda(): LambdaNode.NodejsFunction {
         const resourceId = 'OrderEmail';
 
@@ -178,6 +182,40 @@ export class OrderAppStack extends cdk.Stack {
           tracing: lambda.Tracing.ACTIVE,
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
+    }
+
+    private buildOrderEventsFetchLambda(): LambdaNode.NodejsFunction {
+        const resourceId = 'OrderEventsFetch';
+
+        const func = new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/orders/order-events-fetch.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(5),
+          bundling: {
+              minify: true,
+              sourceMap: false,
+          },
+          logRetention: RetentionDays.THREE_DAYS,
+          environment: {
+            EVENTS_TABLE: this.props.eventsTable.tableName
+          },
+          runtime: lambda.Runtime.NODEJS_16_X,
+          layers: [this.orderEventLayer],
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
+        });
+
+        const policy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            resources: [`${this.props.eventsTable.tableArn}/index/eventsEmailGSI`],
+            actions: ['dynamodb:Query']
+        });
+
+        func.addToRolePolicy(policy);
+
+        return func;
     }
 
     private createOrdersTable(resourceId = 'OrdersDynamoDb', tableName = 'orders'): void {
@@ -251,7 +289,7 @@ export class OrderAppStack extends cdk.Stack {
     private createTopics(): void {
         this.orderEventsTopic = new sns.Topic(this, 'OrderEventsTopic', {
             displayName: 'Order events topic',
-            topicName: 'order-events',                        
+            topicName: 'order-events',
         });
     }
 

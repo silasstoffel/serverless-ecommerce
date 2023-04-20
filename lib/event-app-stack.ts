@@ -11,7 +11,7 @@ export class EventAppStack extends cdk.Stack {
     }
 
     public buildProductsTable(resourceId = 'EventsDynamoDb', tableName = 'events'): dynamodb.Table{
-        return new dynamodb.Table(this, resourceId, {
+        const table = new dynamodb.Table(this, resourceId, {
             tableName,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             partitionKey: {
@@ -22,10 +22,25 @@ export class EventAppStack extends cdk.Stack {
                 name: 'sk',
                 type: dynamodb.AttributeType.STRING
             },
-            timeToLiveAttribute: 'ttl',        
+            timeToLiveAttribute: 'ttl',
             billingMode: dynamodb.BillingMode.PROVISIONED,
             readCapacity: 1,
             writeCapacity: 1
         });
+
+        table.addGlobalSecondaryIndex({
+            indexName:  'eventsEmailGSI',
+            partitionKey: {
+                name: 'email',
+                type: dynamodb.AttributeType.STRING
+            },
+            sortKey: {
+                name: 'sk',
+                type: dynamodb.AttributeType.STRING
+            },
+            projectionType: dynamodb.ProjectionType.ALL
+        });
+
+        return table;
     }
 }

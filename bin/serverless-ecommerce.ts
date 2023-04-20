@@ -54,7 +54,8 @@ const eCommerceApiGateway = new ECommerceGatewayStack(
         ...props,
         fetchProductsHandler: productAppStack.productLoadHandler,
         adminProductsHandler: productAppStack.productsAdministrationHandler,
-        ordersHandler: orderAppStack.ordersHandler
+        ordersHandler: orderAppStack.ordersHandler,
+        ordersEventsFetchHandler: orderAppStack.orderEventsFetchHandler
     }
 );
 

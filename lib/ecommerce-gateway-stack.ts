@@ -9,31 +9,31 @@ export class ECommerceGatewayStack extends cdk.Stack {
 
     public static readonly resourceName = 'ECommerceApiGateway';
 
-    public constructor(scope: Construct, id: string, props: ECommerceGatewayStackProps) {
+    public constructor(scope: Construct, id: string, private readonly props: ECommerceGatewayStackProps) {
       super(scope, id, props);
 
-      const deployOptions = this.buildDeployOptionsFormApiGateway(); 
+      const deployOptions = this.buildDeployOptionsFormApiGateway();
 
       const api = new apiGateway.RestApi(this, ECommerceGatewayStack.resourceName, {
         restApiName: ECommerceGatewayStack.resourceName,
         deployOptions,
         cloudWatchRole: true
       });
-      
-      this.createProductsRoutes(props, api);
-      this.createOrdersRoutes(props, api); 
+
+      this.createProductsRoutes(api);
+      this.createOrdersRoutes(api);
     }
 
-    private createOrdersRoutes(props: ECommerceGatewayStackProps, api: apiGateway.RestApi) {
+    private createOrdersRoutes(api: apiGateway.RestApi) {
         const ordersHandler = new apiGateway.LambdaIntegration(
-            props.ordersHandler
+            this.props.ordersHandler
         );
 
         const ordersResource = api.root.addResource('orders');
-        
+
         // GET /orders?email=option&id=optional
         ordersResource.addMethod('GET', ordersHandler);
-        
+
         // POST /orders
         const orderCreateValidator =  new apiGateway.RequestValidator(this, 'OrderCreateValidator', {
             restApi: api,
@@ -49,7 +49,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
                 type: attributeType.OBJECT,
                 properties: {
                     email: {
-                        type: attributeType.STRING,                        
+                        type: attributeType.STRING,
                     },
                     productIds: {
                         type: attributeType.ARRAY,
@@ -86,15 +86,37 @@ export class ECommerceGatewayStack extends cdk.Stack {
             },
             requestValidator: orderDeleteValidator
         });
+
+        // GET /orders/events?email=required&eventType=optional
+        const orderEventsResource = ordersResource.addResource('events');
+        const orderEventsValidator =  new apiGateway.RequestValidator(this, 'OrderEventsFetchValidator', {
+            restApi: api,
+            requestValidatorName: 'OrderEventsFetchValidator',
+            validateRequestParameters: true
+        });
+
+
+        orderEventsResource.addMethod(
+            'GET',
+            new apiGateway.LambdaIntegration(this.props.ordersEventsFetchHandler),
+            {
+                requestParameters: {
+                   'method.request.querystring.email': true,
+                   'method.request.querystring.eventType': false,
+                },
+                requestValidator: orderEventsValidator
+            }
+        );
+
     }
 
-    private createProductsRoutes(props: ECommerceGatewayStackProps, api: apiGateway.RestApi) {
+    private createProductsRoutes(api: apiGateway.RestApi) {
         const loadProductsHandler = new apiGateway.LambdaIntegration(
-            props.fetchProductsHandler
+            this.props.fetchProductsHandler
         );
 
         const adminProductsHandler = new apiGateway.LambdaIntegration(
-            props.adminProductsHandler
+            this.props.adminProductsHandler
         );
 
         const productsResource = api.root.addResource('products');
@@ -128,7 +150,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
                         minLength: 2,
                     },
                     price: {
-                        type: attrType.NUMBER,                                        
+                        type: attrType.NUMBER,
                     },
                     model: {
                         type: attrType.STRING,
@@ -141,7 +163,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
         const upsertConfig = {
             requestValidator: upsertProductValidator,
             requestModels: {
-                'application/json': productModel,                
+                'application/json': productModel,
             }
         };
 
@@ -177,4 +199,5 @@ export interface ECommerceGatewayStackProps extends cdk.StackProps {
     fetchProductsHandler: LambdaNode.NodejsFunction;
     adminProductsHandler: LambdaNode.NodejsFunction;
     ordersHandler: LambdaNode.NodejsFunction;
+    ordersEventsFetchHandler: LambdaNode.NodejsFunction;
 }
