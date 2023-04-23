@@ -28,12 +28,43 @@ export class InvoiceTransactionRepository {
         private readonly tableName: string
     ) {}
 
-    async create(invoice: InvoiceTransaction): Promise<InvoiceTransaction> {
+    async create(invoiceTransaction: InvoiceTransaction): Promise<InvoiceTransaction> {
         await this.ddbClient.put({
             TableName: this.tableName,
-            Item: invoice
+            Item: invoiceTransaction
         }).promise();
 
-        return invoice;
+        return invoiceTransaction;
+    }
+
+    async findByTransaction(transactionId: string): Promise<InvoiceTransaction | null> {
+        const data = await this.ddbClient.get({
+            TableName: this.tableName,
+            Key: {
+                pk: '#transaction',
+                sk: transactionId
+            }
+        }).promise();
+
+        return data.Item ? data.Item as InvoiceTransaction : null;
+    }
+
+    async updateStatus(transactionId: string, status: InvoiceTransactionStatus): Promise<boolean> {
+        try {
+            await this.ddbClient.update({
+                TableName: this.tableName,
+                Key: {
+                    pk: '#transaction',
+                    sk: transactionId
+                },
+                ConditionExpression: 'attribute_exists(pk)',
+                UpdateExpression: 'set transactionStatus = :status',
+                ExpressionAttributeValues: { ':status': status }
+            }).promise();
+        } catch (error) {
+            return false
+        }
+
+        return true;
     }
 }
