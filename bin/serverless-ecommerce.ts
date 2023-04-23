@@ -10,6 +10,8 @@ import { ProductLayerStack } from '../lib/product-layer-stack';
 import { EventAppStack } from '../lib/event-app-stack';
 import { OrderAppStack } from '../lib/order-app-stack';
 import { OrderLayerStack } from '../lib/order-layer-stack';
+import { InvoiceWSAppStack } from '../lib/invoice-ws-app-stack';
+import { InvoiceLayerStack } from '../lib/invoice-layer-stack';
 
 const env: cdk.Environment = {
     account: process.env.AWS_ACCOUNT_ID,
@@ -61,3 +63,8 @@ const eCommerceApiGateway = new ECommerceGatewayStack(
 
 eCommerceApiGateway.addDependency(productAppStack);
 eCommerceApiGateway.addDependency(orderAppStack);
+
+const invoiceLayerStack = new InvoiceLayerStack(app, 'InvoiceLayerStack', props);
+
+const invoiceWSAppStack = new InvoiceWSAppStack(app, 'InvoiceWSAppStack', props);
+invoiceWSAppStack.addDependency(invoiceLayerStack);

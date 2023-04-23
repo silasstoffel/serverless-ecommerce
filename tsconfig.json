@@ -35,6 +35,9 @@
         ],
         "/opt/nodejs/orders-events-layer": [
             "./src/applications/orders/layers/order-events-layer/nodejs/order-event"
+        ],
+        "/opt/nodejs/invoice-layer": [
+            "./src/applications/invoices/layers/invoices/nodejs/index"
         ]
     }
   },
