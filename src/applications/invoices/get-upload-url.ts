@@ -2,7 +2,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import * as AwsXRay from 'aws-xray-sdk';
 import { S3, DynamoDB, ApiGatewayManagementApi } from 'aws-sdk'
 import { v4 as uuid } from 'uuid';
-import { InvoiceTransactionRepository, InvoiceTransactionStatus, InvoiceWSService } from './layers/invoices/nodejs'
+import { InvoiceTransactionRepository, InvoiceTransactionStatus, InvoiceWSService } from '/opt/nodejs/invoice-layer'
 
 AwsXRay.captureAWS(require('aws-sdk'));
 

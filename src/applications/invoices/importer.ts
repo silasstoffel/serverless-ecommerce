@@ -1,14 +1,87 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { S3Event, S3EventRecord } from 'aws-lambda';
 import * as AwsXRay from 'aws-xray-sdk';
+import { S3, DynamoDB, ApiGatewayManagementApi } from 'aws-sdk';
+import {
+    InvoiceTransactionRepository,
+    InvoiceTransactionStatus,
+    InvoiceWSService,
+    InvoiceRepository,
+    InvoiceFile
+} from '/opt/nodejs/invoice-layer';
 
 AwsXRay.captureAWS(require('aws-sdk'));
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-    console.log(JSON.stringify(event, null, 2));
-    const message = 'Processed';
-    const code = 'EVENT_PROCESSED';
-    return {
-        statusCode: 200,
-        body: JSON.stringify({ code, message }),
-    };
+const invoiceTable = process.env.INVOICE_TABLE_NAME! as string;
+const wsEndpoint = (process.env.INVOICE_WS_API_ENDPOINT! as string).substring(6);
+const s3Client = new S3();
+const ddbClient = new DynamoDB.DocumentClient();
+const wsClient = new ApiGatewayManagementApi({
+    endpoint: wsEndpoint
+});
+
+const invoiceWebSocketService = new InvoiceWSService(wsClient);
+const invoiceTransactionRepository = new InvoiceTransactionRepository(ddbClient, invoiceTable);
+const invoiceRepository = new InvoiceRepository(ddbClient, invoiceTable);
+
+export async function handler(event: S3Event): Promise<void> {
+    const promises: Promise<void>[] = [];
+
+    event.Records.forEach(record => {
+        promises.push(processRecord(record));
+    });
+
+    await Promise.all(promises);
+};
+
+async function processRecord(record: S3EventRecord): Promise<void> {
+    const key = record.s3.object.key;
+    try {
+        const transaction = await invoiceTransactionRepository.findByTransaction(key);
+        if (!transaction) {
+            throw new Error(`Transaction ${key} not found on database.`);
+        }
+
+        if (transaction.transactionStatus !== InvoiceTransactionStatus.GENERATED) {
+            await invoiceWebSocketService.sendInvoiceStatus(
+                key,
+                transaction.connectionId,
+                transaction.transactionStatus
+            );
+            const data = { key, transactionId: transaction.pk, status: transaction.transactionStatus };
+            console.info(`Non valid transaction status: ${JSON.stringify(data)}`);
+
+            return;
+        }
+
+        await Promise.all([
+            invoiceWebSocketService.sendInvoiceStatus(key, transaction.connectionId, InvoiceTransactionStatus.RECEIVED),
+            invoiceTransactionRepository.updateStatus(key, InvoiceTransactionStatus.RECEIVED)
+        ]);
+
+        const file = await s3Client.getObject({ Key: key, Bucket: record.s3.bucket.name }).promise();
+
+        const invoice = JSON.parse(file.Body!.toString('utf-8')) as InvoiceFile;
+
+        const create = invoiceRepository.create({
+            pk: `#invoice_${invoice.customerName}`,
+            sk: invoice.invoiceNumber.toString(),
+            totalValue: invoice.totalValue,
+            productId: invoice.productId,
+            quantity: invoice.quantity,
+            transactionId: key,
+            ttl: 0,
+            createdAt: Date.now()
+        });
+
+        const remove = s3Client.deleteObject({ Key: key, Bucket: record.s3.bucket.name }).promise();
+
+        const updateStatus = invoiceTransactionRepository.updateStatus(key, InvoiceTransactionStatus.PROCESSED);
+
+        const sendMessage = invoiceWebSocketService.sendInvoiceStatus(key, transaction.connectionId, InvoiceTransactionStatus.PROCESSED);
+
+        await Promise.all([create, remove, updateStatus, sendMessage]);
+
+    } catch (err) {
+        console.error(`Error to process s3 record: ${(<Error> err).message} - key: ${key}`);
+    }
 }
