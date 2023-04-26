@@ -13,7 +13,7 @@ export interface Invoice {
 
 export interface InvoiceFile {
     customerName: number;
-    invoiceNumber: number;
+    invoiceNumber: string;
     totalValue: number;
     productId: string;
     quantity: number;

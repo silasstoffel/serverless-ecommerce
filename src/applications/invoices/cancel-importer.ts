@@ -19,7 +19,7 @@ const wsClient = new ApiGatewayManagementApi({
 const invoiceWebSocketService = new InvoiceWSService(wsClient);
 const invoiceTransactionRepository = new InvoiceTransactionRepository(ddbClient, invoiceTable);
 
-export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<void> {
+export async function handler(event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> {
     const transactionId = JSON.parse(event.body!).transactionId as string;
     const lambdaRequestId = context.awsRequestId;
     const webSocketConnectionId = event.requestContext.connectionId! as string;
@@ -37,7 +37,10 @@ export async function handler(event: APIGatewayProxyEvent, context: Context): Pr
             webSocketConnectionId,
             InvoiceTransactionStatus.NOT_FOUND
         );
-        return;
+
+        await invoiceWebSocketService.disconnectClient(webSocketConnectionId);
+
+        return { statusCode: 422, body: '' };
     }
 
     console.log(`Founded transaction: `, JSON.stringify(transaction, null, 2));
@@ -49,7 +52,8 @@ export async function handler(event: APIGatewayProxyEvent, context: Context): Pr
             webSocketConnectionId,
             InvoiceTransactionStatus.NOT_FOUND
         );
-        return;
+        await invoiceWebSocketService.disconnectClient(webSocketConnectionId);
+        return { statusCode: 422, body: '' };
     }
 
     const sendMessage = invoiceWebSocketService.sendInvoiceStatus(
@@ -62,6 +66,9 @@ export async function handler(event: APIGatewayProxyEvent, context: Context): Pr
 
     await Promise.all([sendMessage, changeStatus]);
 
+    await invoiceWebSocketService.disconnectClient(webSocketConnectionId);
+
     console.log('Cancelled successfully.');
-    return;
+
+    return { statusCode: 204, body: '' };
 }

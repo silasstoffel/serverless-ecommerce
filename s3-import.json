@@ -1,6 +1,6 @@
 {
     "customerName": "silasstofel@gmail.com",
-    "invoiceNumber": 102030,
+    "invoiceNumber": "ABC",
     "totalValue": 1200,
     "productId": "15844",
     "quantity": 2

@@ -1,4 +1,4 @@
-import { S3Event, S3EventRecord } from 'aws-lambda';
+import { APIGatewayProxyResult, S3Event, S3EventRecord } from 'aws-lambda';
 import * as AwsXRay from 'aws-xray-sdk';
 import { S3, DynamoDB, ApiGatewayManagementApi } from 'aws-sdk';
 import {
@@ -33,7 +33,7 @@ export async function handler(event: S3Event): Promise<void> {
     await Promise.all(promises);
 };
 
-async function processRecord(record: S3EventRecord): Promise<void> {
+async function processRecord(record: S3EventRecord): Promise<APIGatewayProxyResult> {
     const key = record.s3.object.key;
     try {
         const transaction = await invoiceTransactionRepository.findByTransaction(key);
@@ -49,8 +49,9 @@ async function processRecord(record: S3EventRecord): Promise<void> {
             );
             const data = { key, transactionId: transaction.pk, status: transaction.transactionStatus };
             console.info(`Non valid transaction status: ${JSON.stringify(data)}`);
+            await invoiceWebSocketService.disconnectClient(transaction.connectionId);
 
-            return;
+            return { statusCode: 422, body: '' };
         }
 
         await Promise.all([
@@ -61,6 +62,22 @@ async function processRecord(record: S3EventRecord): Promise<void> {
         const file = await s3Client.getObject({ Key: key, Bucket: record.s3.bucket.name }).promise();
 
         const invoice = JSON.parse(file.Body!.toString('utf-8')) as InvoiceFile;
+
+        if (!invoice.invoiceNumber || invoice.invoiceNumber.length < 5) {
+            const status = InvoiceTransactionStatus.NON_VALID_INVOICE_NUMBER;
+
+            await Promise.all([
+                invoiceWebSocketService.sendInvoiceStatus(key, transaction.connectionId, status),
+                invoiceTransactionRepository.updateStatus(key, status),
+                invoiceWebSocketService.sendData(transaction.connectionId, JSON.stringify({
+                    message: 'Invoice number should be greater than 4'
+                }))
+            ]);
+
+            await invoiceWebSocketService.disconnectClient(transaction.connectionId);
+
+            return { statusCode: 422, body: '' };
+        }
 
         const create = invoiceRepository.create({
             pk: `#invoice_${invoice.customerName}`,
@@ -80,6 +97,10 @@ async function processRecord(record: S3EventRecord): Promise<void> {
         const sendMessage = invoiceWebSocketService.sendInvoiceStatus(key, transaction.connectionId, InvoiceTransactionStatus.PROCESSED);
 
         await Promise.all([create, remove, updateStatus, sendMessage]);
+
+        await invoiceWebSocketService.disconnectClient(transaction.connectionId);
+
+        return { statusCode: 204, body: '' };
 
     } catch (err) {
         console.error(`Error to process s3 record: ${(<Error> err).message} - key: ${key}`);

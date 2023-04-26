@@ -104,10 +104,7 @@ export class InvoiceWSAppStack extends cdk.Stack {
             apiName: 'InvoiceWebSocketAPI',
             description: 'Invoice WebSocket API',
             connectRouteOptions: { integration },
-            disconnectRouteOptions: {
-                integration,
-                returnResponse: true
-            },
+            disconnectRouteOptions: { integration },
         });
 
         const stageName = 'prod';
