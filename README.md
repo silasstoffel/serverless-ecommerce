@@ -8,7 +8,7 @@ The `cdk.json` file tells the CDK Toolkit how to execute your app.
 # CDK CLI
 
 ```shell
-npm install -g aws-cdk  
+npm install -g aws-cdk
 ```
 
 ## Useful commands
@@ -21,3 +21,22 @@ npm install -g aws-cdk
 * `cdk synth`       emits the synthesized CloudFormation template
 * `cdk bootstrap`   runs this for create bucket in your aws account (IMPORTANT: Run this command only one time)
 * `cdk deploy --all --require-approval never`  deploy all stack and dot not require approval
+
+
+
+# WebSocket Requests
+
+Get url to upload
+
+```json
+{ "action": "get-import-url" }
+```
+
+Cancel import
+
+```json
+{
+	"action": "cancel-import",
+	"transactionId": "07ab900d-1f33-4918-af79-b191820f80d6"
+}
+```

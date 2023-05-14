@@ -66,5 +66,6 @@ eCommerceApiGateway.addDependency(orderAppStack);
 
 const invoiceLayerStack = new InvoiceLayerStack(app, 'InvoiceLayerStack', props);
 
-const invoiceWSAppStack = new InvoiceWSAppStack(app, 'InvoiceWSAppStack', props);
+const invoiceWSAppStack = new InvoiceWSAppStack(app, 'InvoiceWSAppStack', {...props, eventsTable });
 invoiceWSAppStack.addDependency(invoiceLayerStack);
+invoiceLayerStack.addDependency(eventAppStack);
