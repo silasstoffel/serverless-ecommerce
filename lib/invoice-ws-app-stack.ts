@@ -42,6 +42,9 @@ export class InvoiceWSAppStack extends cdk.Stack {
       this.createInvoiceCancelImporterHandler();
       this.createWebSocketRoutes();
       this.createInvoiceEventsHandler();
+
+      // Just a simple test
+      this.s3LambdaPoc();
     }
 
     private createInvoiceTable(): void {
@@ -328,6 +331,57 @@ export class InvoiceWSAppStack extends cdk.Stack {
             'InvoiceLayerVersion',
             systemManager.StringParameter.valueForStringParameter(this, 'InvoiceLayerVersionArn')
         );
+    }
+
+    private s3LambdaPoc() {
+        const bucket =  new s3.Bucket(this, 'S3LambdaPoc', {
+            bucketName: 'silas89-s3-lambda-poc',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+            versioned: false,
+            lifecycleRules: [
+                {
+                    enabled: true,
+                    expiration: cdk.Duration.days(1)
+                }
+            ]
+        });
+
+        const resourceId = 'S3LambdaPocHandler';
+
+        const s3LambdaPocHandler = new lambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/invoices/s3-poc.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(10),
+          bundling: { minify: true, sourceMap: false },
+          logRetention: RetentionDays.ONE_DAY,
+          runtime: lambda.Runtime.NODEJS_16_X,
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
+          layers: [this.invoiceLayer],
+          environment: {
+            BUCKET_NAME: bucket.bucketName
+          }
+        });
+
+        const s3EventSource = new lambdaEventSources.S3EventSource(bucket, {
+            events: [s3.EventType.OBJECT_CREATED],
+            filters: [ { prefix: 'itau/' } ]
+        });
+
+        s3LambdaPocHandler.addEventSource(s3EventSource);
+
+        const s3Policy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            resources: [
+                `${bucket.bucketArn}/itau/*`
+            ],
+            actions: ['s3:DeleteObject', 's3:GetObject']
+        });
+
+        s3LambdaPocHandler.addToRolePolicy(s3Policy);
     }
 }
 

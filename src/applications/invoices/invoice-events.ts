@@ -1,5 +1,4 @@
-import { AttributeValue, DynamoDBStreamEvent } from "aws-lambda";
-import { Context } from "aws-sdk/clients/autoscaling";
+import { AttributeValue, DynamoDBStreamEvent, Context } from "aws-lambda";
 import * as AwsXRay from 'aws-xray-sdk';
 import { DynamoDB, ApiGatewayManagementApi } from 'aws-sdk'
 import { InvoiceWSService } from '/opt/nodejs/invoice-layer'
