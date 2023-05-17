@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import { DynamoDB, SNS } from 'aws-sdk';
+import { DynamoDB, SNS, EventBridge } from 'aws-sdk';
 import * as AwsXRay from 'aws-xray-sdk';
 import { v4 as uuid } from 'uuid';
 import { Product, ProductRepository } from '/opt/nodejs/products-layer';
@@ -8,14 +8,17 @@ import { OrderEvent, OrderEventSchema, OrderEventType } from '/opt/nodejs/orders
 import { jsonResponse } from 'src/shared/response';
 import { OrderRequest, OrderResponse, OrderProductResponse } from './types/order.types';
 
+
 AwsXRay.captureAWS(require('aws-sdk'));
 
 const productsTable = process.env.PRODUCTS_TABLE!;
 const ordersTable = process.env.ORDERS_TABLE!;
 const orderEventsTopicARN = process.env.ORDER_EVENTS_TOPIC_ARN!
+const auditBusName = process.env.AUDIT_BUS_NAME!;
 
 const dynamoDb = new DynamoDB.DocumentClient();
 const SNSClient = new SNS();
+const eventBridgeClient = new EventBridge();
 
 const productRepository = new ProductRepository(dynamoDb, productsTable);
 const orderRepository = new OrderRepository(dynamoDb, ordersTable);
@@ -30,7 +33,7 @@ export async function handler(
     const contextId = event.requestContext;
     const resource = event.resource;
     const queryStringParams = event.queryStringParameters;
-    
+
     console.log(JSON.stringify({
         method,
         resource,
@@ -41,24 +44,24 @@ export async function handler(
         queryStringParams
     }, null, 2));
 
-    if (method === 'GET') {        
+    if (method === 'GET') {
         if (queryStringParams) {
             const { email, id } = queryStringParams;
             if (email && id) {
                 // Get specify order from an user
                 const order = await orderRepository.find(id, email);
                 if (!order) {
-                    return jsonResponse(404, { code: 'ORDER_NOT_FOUND', message: 'Order not found.'}); 
+                    return jsonResponse(404, { code: 'ORDER_NOT_FOUND', message: 'Order not found.'});
                 }
 
-                return jsonResponse(200, convertOrderToResponse(order));     
+                return jsonResponse(200, convertOrderToResponse(order));
             }
 
             if (email && !id) {
                 // Get all orders from an user
                 const orders = await orderRepository.findByEmail(email);
                 const response = orders.map((item) => convertOrderToResponse(item));
-                return jsonResponse(200, response);                
+                return jsonResponse(200, response);
             }
         }
         const orders = await orderRepository.findAll(OrderRepository.viewWithoutProduct);
@@ -72,13 +75,27 @@ export async function handler(
         const products = await productRepository.findByIds(orderRequest.productIds);
 
         if (products.length !== orderRequest.productIds.length) {
+            const put = await eventBridgeClient.putEvents({
+                Entries: [{
+                    Source: 'app.order',
+                    EventBusName: auditBusName,
+                    DetailType: 'order',
+                    Time: new Date(),
+                    Detail: JSON.stringify({
+                        reason: 'PRODUCT_NOT_FOUND',
+                        orderRequest
+                    })
+                }]
+            }).promise()
+
+            console.log('Put event result', put);
             return jsonResponse(404, { code: 'SOME_PRODUCT_NOT_FOUND', message: 'Some product not found.'});
         }
 
         const order = buildOrder(orderRequest, products);
         const createPromise = orderRepository.create(order);
         const publishPromise = produceEvent(order, OrderEventType.CREATED, lambdaRequestId);
-        
+
         const results = await Promise.all([createPromise, publishPromise]);
 
         console.log(`Message publish:${results[1].MessageId} - OrderId:${order.sk}`);
@@ -89,7 +106,7 @@ export async function handler(
     if (method === 'DELETE') {
         console.log('Deleting order.');
         const { email, id } = queryStringParams!;
-        
+
         try {
             const data = await orderRepository.delete(String(id), String(email));
             console.log('Order deleted.');
@@ -116,7 +133,7 @@ function buildOrder(payload: OrderRequest, products: Product[]): Order {
         const { code, price } = product;
         orderProducts.push({ code, price });
     });
-    
+
     return {
         pk: payload.email,
         sk: uuid(),
@@ -150,7 +167,7 @@ function convertOrderToResponse(order: Order): OrderResponse {
         products: orderProducts ?? undefined,
         billing: {
             payment: order.billing.payment,
-            totalOrder: order.billing.totalOrder        
+            totalOrder: order.billing.totalOrder
         },
         shipping: {
             type: order.shipping.type,
@@ -159,7 +176,7 @@ function convertOrderToResponse(order: Order): OrderResponse {
     }
 }
 
-async function produceEvent(order: Order, eventType: OrderEventType, lambdaRequestId: string) {    
+async function produceEvent(order: Order, eventType: OrderEventType, lambdaRequestId: string) {
     const codes: string[] = [];
     order?.products?.forEach((item) => codes.push(item.code));
 
@@ -171,7 +188,7 @@ async function produceEvent(order: Order, eventType: OrderEventType, lambdaReque
         productCodes: codes,
         requestId: lambdaRequestId
     };
-    
+
     const envelope: OrderEventSchema = {
         eventType: eventType,
         occurredAt: new Date(),

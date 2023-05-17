@@ -12,6 +12,7 @@ import * as systemManager from 'aws-cdk-lib/aws-ssm';
 import * as apiGtwV2 from '@aws-cdk/aws-apigatewayv2-alpha';
 import * as apiGtwV2Integrations from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import * as s3Notifier from 'aws-cdk-lib/aws-s3-notifications';
+import * as events from 'aws-cdk-lib/aws-events';
 
 export class InvoiceWSAppStack extends cdk.Stack {
     private invoiceTable: dynamodb.Table;
@@ -192,6 +193,7 @@ export class InvoiceWSAppStack extends cdk.Stack {
           environment: {
             EVENTS_TABLE_NAME: this.props.eventsTable.tableName,
             INVOICE_WS_API_ENDPOINT: this.wsApiEndpoint,
+            AUDIT_BUS_NAME: this.props.auditBus.eventBusName
           },
           layers: [this.invoiceLayer]
         });
@@ -225,6 +227,9 @@ export class InvoiceWSAppStack extends cdk.Stack {
                 retryAttempts: 3
             })
          );
+
+         // Event Bridge permissions
+         this.props.auditBus.grantPutEventsTo(this.invoiceEventsHandler);
     }
 
     private createInvoiceImporterHandler(): void {
@@ -247,6 +252,7 @@ export class InvoiceWSAppStack extends cdk.Stack {
           environment: {
             INVOICE_TABLE_NAME: this.invoiceTable.tableName,
             INVOICE_WS_API_ENDPOINT: this.wsApiEndpoint,
+            AUDIT_BUS_NAME: this.props.auditBus.eventBusName
           },
           layers: [this.invoiceLayer]
         });
@@ -264,6 +270,9 @@ export class InvoiceWSAppStack extends cdk.Stack {
             new s3Notifier.LambdaDestination(this.invoiceImporterHandler)
         );
         this.webSocketApi.grantManageConnections(this.invoiceImporterHandler);
+
+        // Permission Event Bridge
+        this.props.auditBus.grantPutEventsTo(this.invoiceImporterHandler);
     }
 
     private createInvoiceCancelImporterHandler(): void {
@@ -386,5 +395,6 @@ export class InvoiceWSAppStack extends cdk.Stack {
 }
 
 export interface InvoiceWSAppStackProps extends cdk.StackProps {
-    eventsTable: dynamodb.Table
+    eventsTable: dynamodb.Table,
+    auditBus: events.EventBus
 }

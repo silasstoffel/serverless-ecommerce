@@ -1,6 +1,6 @@
 import { APIGatewayProxyResult, S3Event, S3EventRecord } from 'aws-lambda';
 import * as AwsXRay from 'aws-xray-sdk';
-import { S3, DynamoDB, ApiGatewayManagementApi } from 'aws-sdk';
+import { S3, DynamoDB, ApiGatewayManagementApi, EventBridge } from 'aws-sdk';
 import {
     InvoiceTransactionRepository,
     InvoiceTransactionStatus,
@@ -13,11 +13,14 @@ AwsXRay.captureAWS(require('aws-sdk'));
 
 const invoiceTable = process.env.INVOICE_TABLE_NAME! as string;
 const wsEndpoint = (process.env.INVOICE_WS_API_ENDPOINT! as string).substring(6);
+const auditBusName = process.env.AUDIT_BUS_NAME!;
+
 const s3Client = new S3();
 const ddbClient = new DynamoDB.DocumentClient();
 const wsClient = new ApiGatewayManagementApi({
     endpoint: wsEndpoint
 });
+const eventBridgeClient = new EventBridge();
 
 const invoiceWebSocketService = new InvoiceWSService(wsClient);
 const invoiceTransactionRepository = new InvoiceTransactionRepository(ddbClient, invoiceTable);
@@ -66,15 +69,34 @@ async function processRecord(record: S3EventRecord): Promise<APIGatewayProxyResu
         if (!invoice.invoiceNumber || invoice.invoiceNumber.length < 5) {
             const status = InvoiceTransactionStatus.NON_VALID_INVOICE_NUMBER;
 
+            const putEventPromise = eventBridgeClient.putEvents({
+                Entries: [{
+                    Source: 'app.invoice',
+                    EventBusName: auditBusName,
+                    DetailType: 'invoice',
+                    Time: new Date(),
+                    Detail: JSON.stringify({
+                        errorDetail: 'FAIL_NO_INVOICE_NUMBER',
+                        info: {
+                            invoiceKey: key,
+                            customerName: invoice.customerName
+                        }
+                    })
+                }]
+            }).promise()
+
             await Promise.all([
                 invoiceWebSocketService.sendInvoiceStatus(key, transaction.connectionId, status),
                 invoiceTransactionRepository.updateStatus(key, status),
                 invoiceWebSocketService.sendData(transaction.connectionId, JSON.stringify({
                     message: 'Invoice number should be greater than 4'
-                }))
+                })),
+                putEventPromise
             ]);
 
             await invoiceWebSocketService.disconnectClient(transaction.connectionId);
+
+            console.log('Put event result', put);
 
             return { statusCode: 422, body: '' };
         }

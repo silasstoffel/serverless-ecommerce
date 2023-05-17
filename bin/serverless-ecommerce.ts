@@ -12,6 +12,7 @@ import { OrderAppStack } from '../lib/order-app-stack';
 import { OrderLayerStack } from '../lib/order-layer-stack';
 import { InvoiceWSAppStack } from '../lib/invoice-ws-app-stack';
 import { InvoiceLayerStack } from '../lib/invoice-layer-stack';
+import { AuditEventBusStack } from '../lib/audit-event-bus';
 
 const env: cdk.Environment = {
     account: process.env.AWS_ACCOUNT_ID,
@@ -30,6 +31,9 @@ const props = { tags, env };
 
 const app = new cdk.App();
 
+const auditEventBusStack = new AuditEventBusStack(app, 'AuditEventBusStack', props);
+const auditBus = auditEventBusStack.bus;
+
 const productLayerStack = new ProductLayerStack(app, 'ProductsLayerApp', props);
 
 const eventAppStack = new EventAppStack(app, 'EventAppStack', props);
@@ -43,11 +47,13 @@ const orderLayerStack = new OrderLayerStack(app, 'OrdersLayerApp', props);
 const orderAppStack = new OrderAppStack(app, 'OrderAppStack', {
     ...props,
     productTable: productAppStack.productsTable,
-    eventsTable
+    eventsTable,
+    auditBus
 });
 orderAppStack.addDependency(productAppStack);
 orderAppStack.addDependency(orderLayerStack);
 orderAppStack.addDependency(eventAppStack);
+orderAppStack.addDependency(auditEventBusStack);
 
 const eCommerceApiGateway = new ECommerceGatewayStack(
     app,
@@ -66,6 +72,7 @@ eCommerceApiGateway.addDependency(orderAppStack);
 
 const invoiceLayerStack = new InvoiceLayerStack(app, 'InvoiceLayerStack', props);
 
-const invoiceWSAppStack = new InvoiceWSAppStack(app, 'InvoiceWSAppStack', {...props, eventsTable });
+const invoiceWSAppStack = new InvoiceWSAppStack(app, 'InvoiceWSAppStack', {...props, eventsTable, auditBus });
 invoiceWSAppStack.addDependency(invoiceLayerStack);
 invoiceLayerStack.addDependency(eventAppStack);
+invoiceLayerStack.addDependency(auditEventBusStack);

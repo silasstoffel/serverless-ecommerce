@@ -1,6 +1,6 @@
 import { AttributeValue, DynamoDBStreamEvent, Context } from "aws-lambda";
 import * as AwsXRay from 'aws-xray-sdk';
-import { DynamoDB, ApiGatewayManagementApi } from 'aws-sdk'
+import { DynamoDB, ApiGatewayManagementApi, EventBridge } from 'aws-sdk'
 import { InvoiceWSService } from '/opt/nodejs/invoice-layer'
 import {  } from "aws-cdk-lib/aws-appsync";
 
@@ -8,11 +8,13 @@ AwsXRay.captureAWS(require('aws-sdk'));
 
 const eventsTable = process.env.EVENTS_TABLE_NAME! as string;
 const wsEndpoint = (process.env.INVOICE_WS_API_ENDPOINT! as string).substring(6);
+const auditBusName = process.env.AUDIT_BUS_NAME!;
 
 const ddbClient = new DynamoDB.DocumentClient();
 const wsClient = new ApiGatewayManagementApi({
     endpoint: wsEndpoint
 });
+const eventBridgeClient = new EventBridge();
 
 const invoiceWebSocketService = new InvoiceWSService(wsClient);
 
@@ -71,7 +73,24 @@ async function expireTransaction(transactionImage: {[ key: string]: AttributeVal
     const transactionStatus = transactionImage.transactionStatus.S!
     if (transactionStatus !== 'INVOICE_PROCESSED') {
         console.log(`Invoice import failed. Transaction Status: ${transactionStatus}`);
-        await invoiceWebSocketService.sendInvoiceStatus(transactionId, connectionId, 'TIMEOUT')
+
+        const putEvent = eventBridgeClient.putEvents({
+            Entries: [{
+                Source: 'app.invoice',
+                EventBusName: auditBusName,
+                DetailType: 'invoice',
+                Time: new Date(),
+                Detail: JSON.stringify({
+                    errorDetail: 'TIMEOUT',
+                    transactionId,
+                    connectionId
+                })
+            }]
+        }).promise()
+
+        const sendStatus = invoiceWebSocketService.sendInvoiceStatus(transactionId, connectionId, 'TIMEOUT')
+
+        await Promise.all([putEvent, sendStatus])
     }
     await invoiceWebSocketService.disconnectClient(connectionId);
 }
