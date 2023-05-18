@@ -11,6 +11,9 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSource from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as events from 'aws-cdk-lib/aws-events';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cw from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 
 export class OrderAppStack extends cdk.Stack {
     public readonly ordersHandler: LambdaNode.NodejsFunction;
@@ -159,7 +162,7 @@ export class OrderAppStack extends cdk.Stack {
     private buildOrdersLambda(): LambdaNode.NodejsFunction {
         const resourceId = 'Orders';
 
-        return new LambdaNode.NodejsFunction(this, resourceId, {
+        const handler = new LambdaNode.NodejsFunction(this, resourceId, {
           functionName: resourceId,
           entry: './src/applications/orders/orders.ts',
           handler: 'handler',
@@ -185,6 +188,41 @@ export class OrderAppStack extends cdk.Stack {
           tracing: lambda.Tracing.ACTIVE,
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
+
+        // Creating monitors
+
+        // Metrics
+        const productNotFoundMetric = handler.logGroup.addMetricFilter('product-not-found', {
+            metricName: 'OrderWithNonValidProduct',
+            metricNamespace: 'Order',
+            filterPattern: logs.FilterPattern.literal('Some product not found')
+        });
+
+        // Alarm
+        const productNotFoundAlarm = productNotFoundMetric.metric()
+            .with({
+                statistic: 'Sum',
+                period: cdk.Duration.minutes(2)
+            })
+            .createAlarm(this, 'ProductNotFoundWhenCreateOrder', {
+                alarmName: 'Product not found when creating order',
+                alarmDescription: 'Some product not found when creating order',
+                evaluationPeriods: 1,
+                threshold: 2,
+                actionsEnabled: true,
+                comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+            });
+
+        // Actions
+        const orderAlarmsTopic = new sns.Topic(this, 'OrderAlarmsTopic', {
+            displayName: 'Order alarms topic',
+            topicName: 'order-alarms',
+        });
+        orderAlarmsTopic.addSubscription(new sub.EmailSubscription('silasstofel@gmail.com'))
+
+        productNotFoundAlarm.addAlarmAction(new cwActions.SnsAction(orderAlarmsTopic))
+
+        return handler;
     }
 
     private buildOrderEventsFetchLambda(): LambdaNode.NodejsFunction {

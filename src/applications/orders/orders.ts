@@ -89,7 +89,10 @@ export async function handler(
             }).promise()
 
             console.log('Put event result', put);
-            return jsonResponse(404, { code: 'SOME_PRODUCT_NOT_FOUND', message: 'Some product not found.'});
+            const message = 'Some product not found.'
+            console.error(message);
+
+            return jsonResponse(404, { code: 'SOME_PRODUCT_NOT_FOUND', message } );
         }
 
         const order = buildOrder(orderRequest, products);
