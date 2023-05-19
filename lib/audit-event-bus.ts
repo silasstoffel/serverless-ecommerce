@@ -6,6 +6,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import { Construct } from 'constructs';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
+import * as cw from 'aws-cdk-lib/aws-cloudwatch';
 
 export class AuditEventBusStack extends cdk.Stack {
 
@@ -34,6 +35,37 @@ export class AuditEventBusStack extends cdk.Stack {
         this.queueTimeout = new sqs.Queue(this, 'InvoiceImportTimeout', {
             queueName: 'invoice-import-timeout',
         });
+
+        // Metrics
+        const numberOfMessagesVisibleMetric = this.queueTimeout.metricApproximateNumberOfMessagesVisible({
+            period: cdk.Duration.minutes(2),
+            statistic: 'Sum'
+        });
+
+        const ageOfOldestMessageMetric = this.queueTimeout.metricApproximateAgeOfOldestMessage({
+            period: cdk.Duration.minutes(2),
+            statistic: 'Maximum',
+            unit: cw.Unit.SECONDS,
+        });
+
+        // Alarms
+        numberOfMessagesVisibleMetric.createAlarm(this, 'MessageVisibleInImporterTimeoutQueue', {
+            actionsEnabled: false,
+            alarmName: 'visible-message-from-invoice-importer-queue',
+            alarmDescription: 'Number of visible messages in queue invoice importer timeout',
+            threshold: 5,
+            evaluationPeriods: 1,
+            comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+        })
+
+        ageOfOldestMessageMetric.createAlarm(this, 'AgeOfMessagesInImporterTimeoutQueue', {
+            actionsEnabled: false,
+            alarmName: 'age-message-from-invoice-importer-queue',
+            alarmDescription: 'Age of messages in queue invoice importer timeout',
+            threshold: 60,
+            evaluationPeriods: 1,
+            comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+        })
     }
 
     private createEventBus(): events.EventBus {
