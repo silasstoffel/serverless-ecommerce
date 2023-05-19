@@ -275,6 +275,21 @@ export class OrderAppStack extends cdk.Stack {
             readCapacity: 1,
             writeCapacity: 1
         });
+
+        const writeThrottleEventsMetric = this.orderTable.metric('WriteThrottleEvents', {
+            period: cdk.Duration.minutes(2),
+            statistic: 'SampleCount',
+            unit: cw.Unit.COUNT
+        })
+
+        writeThrottleEventsMetric.createAlarm(this, 'WriteThrottleEventsOrderTable', {
+            alarmName: 'write-throttle-events-order-table',
+            actionsEnabled: false,
+            evaluationPeriods: 1,
+            threshold: 10,
+            comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            treatMissingData: cw.TreatMissingData.NOT_BREACHING
+        })
     }
 
     private createLayers(): void {
