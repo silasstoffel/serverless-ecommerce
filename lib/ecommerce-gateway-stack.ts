@@ -3,11 +3,17 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as cloudWatch from 'aws-cdk-lib/aws-logs';
 import * as apiGateway from 'aws-cdk-lib/aws-apigateway';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { StageOptions } from 'aws-cdk-lib/aws-apigateway';
+import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 
 export class ECommerceGatewayStack extends cdk.Stack {
 
     public static readonly resourceName = 'ECommerceApiGateway';
+    private  productAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
+    private  customerPool: cognito.UserPool;
+    private  adminPool: cognito.UserPool;
 
     public constructor(scope: Construct, id: string, private readonly props: ECommerceGatewayStackProps) {
       super(scope, id, props);
@@ -19,6 +25,8 @@ export class ECommerceGatewayStack extends cdk.Stack {
         deployOptions,
         cloudWatchRole: true
       });
+
+      this.createCognitoAuth();
 
       this.createProductsRoutes(api);
       this.createOrdersRoutes(api);
@@ -119,13 +127,25 @@ export class ECommerceGatewayStack extends cdk.Stack {
             this.props.adminProductsHandler
         );
 
+        const loadProductsAuthorizer = {
+            authorizer: this.productAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['customer/web', 'customer/mobile']
+        };
+
+        const loadProductsWebAuthorizer = {
+            authorizer: this.productAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['customer/web']
+        };
+
         const productsResource = api.root.addResource('products');
         const productParamIDResource = productsResource.addResource('{id}');
 
         // GET /products
-        productsResource.addMethod('GET', loadProductsHandler);
+        productsResource.addMethod('GET', loadProductsHandler, loadProductsAuthorizer);
         // GET /products/{id}
-        productParamIDResource.addMethod('GET', loadProductsHandler);
+        productParamIDResource.addMethod('GET', loadProductsHandler, loadProductsWebAuthorizer);
 
         const upsertProductValidator = new apiGateway.RequestValidator(this, 'UpSertProductValidator', {
             restApi: api,
@@ -192,6 +212,134 @@ export class ECommerceGatewayStack extends cdk.Stack {
                 user: true
             })
         }
+    }
+
+    private createPostConfirmationHandler(): LambdaNode.NodejsFunction {
+        const resourceId = 'PostConfirmation';
+
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/auth/post-confirmation.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(10),
+          bundling: { minify: true, sourceMap: false },
+          logRetention: RetentionDays.ONE_DAY,
+          runtime: lambda.Runtime.NODEJS_16_X,
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
+        });
+    }
+
+    private createPreAuthenticateHandler(): LambdaNode.NodejsFunction {
+        const resourceId = 'PreAuthentication';
+
+        return new LambdaNode.NodejsFunction(this, resourceId, {
+          functionName: resourceId,
+          entry: './src/applications/auth/pre-authentication.ts',
+          handler: 'handler',
+          memorySize: 128,
+          timeout: cdk.Duration.seconds(10),
+          bundling: { minify: true, sourceMap: false },
+          logRetention: RetentionDays.ONE_DAY,
+          runtime: lambda.Runtime.NODEJS_16_X,
+          tracing: lambda.Tracing.ACTIVE,
+          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0,
+        });
+    }
+
+    private createCognitoAuth() {
+        const preAuthentication = this.createPreAuthenticateHandler();
+        const postConfirmation = this.createPostConfirmationHandler();
+
+        this.customerPool = new cognito.UserPool(this, "CognitoCustomerPool", {
+            userPoolName: 'customer-pool',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            selfSignUpEnabled: true,
+            autoVerify: {
+                email: true,
+                phone: false,
+            },
+            userVerification: {
+                emailSubject: 'Verify your email address for e-commerce service',
+                emailBody: 'Thank you for signing up to e-commerce. Your verification code is {####}',
+                emailStyle: cognito.VerificationEmailStyle.CODE
+            },
+            signInAliases: {
+                username: false,
+                email: true,
+            },
+            standardAttributes: {
+                fullname: {
+                    required: true,
+                    mutable: false
+                }
+            },
+            passwordPolicy: {
+                minLength: 8,
+                requireLowercase: true,
+                requireUppercase: true,
+                requireDigits: true,
+                requireSymbols: true,
+                tempPasswordValidity: cdk.Duration.days(1)
+            },
+            accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+            lambdaTriggers: {
+                preAuthentication,
+                postConfirmation
+            }
+        });
+
+        this.customerPool.addDomain('customer-domain', {
+            cognitoDomain: {
+                domainPrefix: 'serverless-e-commerce-customer-service'
+            }
+        })
+
+        const customerWebScope = new cognito.ResourceServerScope({
+            scopeName: 'web',
+            scopeDescription: 'Customers web operations'
+        });
+
+        const customerMobileScope = new cognito.ResourceServerScope({
+            scopeName: 'mobile',
+            scopeDescription: 'Customers mobile operations'
+        });
+
+        const customerResourceService = this.customerPool.addResourceServer('CustomerResourceService', {
+            identifier: 'customer',
+            userPoolResourceServerName: 'customer-resource-server',
+            scopes: [customerMobileScope, customerWebScope]
+        });
+
+        this.customerPool.addClient('customer-web-client', {
+            userPoolClientName: 'customer-web-client',
+            authFlows: { userPassword: true },
+            accessTokenValidity: cdk.Duration.minutes(60),
+            refreshTokenValidity: cdk.Duration.days(7),
+            oAuth: {
+                scopes: [
+                    cognito.OAuthScope.resourceServer(customerResourceService, customerWebScope)
+                ]
+            }
+        });
+
+        this.customerPool.addClient('customer-mobile-client', {
+            userPoolClientName: 'customer-mobile-client',
+            authFlows: { userPassword: true },
+            accessTokenValidity: cdk.Duration.minutes(60),
+            refreshTokenValidity: cdk.Duration.days(7),
+            oAuth: {
+                scopes: [
+                    cognito.OAuthScope.resourceServer(customerResourceService, customerMobileScope)
+                ]
+            }
+        });
+
+        this.productAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoProductsAuthorizer', {
+            authorizerName: 'products-authorizer',
+            cognitoUserPools: [this.customerPool]
+        });
     }
 }
 
