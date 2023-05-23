@@ -12,6 +12,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
 
     public static readonly resourceName = 'ECommerceApiGateway';
     private  productAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
+    private  adminAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
     private  customerPool: cognito.UserPool;
     private  adminPool: cognito.UserPool;
 
@@ -26,8 +27,12 @@ export class ECommerceGatewayStack extends cdk.Stack {
         cloudWatchRole: true
       });
 
-      this.createCognitoAuth();
+      // Cognito
+      this.createCustomerUserPool();
+      this.createAdminUserPool();
+      this.createAuthorizer();
 
+      // Routes
       this.createProductsRoutes(api);
       this.createOrdersRoutes(api);
     }
@@ -130,13 +135,13 @@ export class ECommerceGatewayStack extends cdk.Stack {
         const loadProductsAuthorizer = {
             authorizer: this.productAuthorizer,
             authorizationType: apiGateway.AuthorizationType.COGNITO,
-            authorizationScopes: ['customer/web', 'customer/mobile']
+            authorizationScopes: ['customer/web', 'customer/mobile', 'admin/web']
         };
 
         const loadProductsWebAuthorizer = {
             authorizer: this.productAuthorizer,
             authorizationType: apiGateway.AuthorizationType.COGNITO,
-            authorizationScopes: ['customer/web']
+            authorizationScopes: ['customer/web', 'admin/web']
         };
 
         const productsResource = api.root.addResource('products');
@@ -184,7 +189,10 @@ export class ECommerceGatewayStack extends cdk.Stack {
             requestValidator: upsertProductValidator,
             requestModels: {
                 'application/json': productModel,
-            }
+            },
+            authorizer: this.adminAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['admin/web']
         };
 
         // POST /products
@@ -192,7 +200,11 @@ export class ECommerceGatewayStack extends cdk.Stack {
         // PUT /products/{id}
         productParamIDResource.addMethod('PUT', adminProductsHandler, upsertConfig);
         // DELETE /products/{id}
-        productParamIDResource.addMethod('DELETE', adminProductsHandler);
+        productParamIDResource.addMethod('DELETE', adminProductsHandler, {
+            authorizer: this.adminAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['admin/web']
+        });
     }
 
     private buildDeployOptionsFormApiGateway(): StageOptions {
@@ -248,7 +260,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
         });
     }
 
-    private createCognitoAuth() {
+    private createCustomerUserPool() {
         const preAuthentication = this.createPreAuthenticateHandler();
         const postConfirmation = this.createPostConfirmationHandler();
 
@@ -336,9 +348,81 @@ export class ECommerceGatewayStack extends cdk.Stack {
             }
         });
 
+        //this.productAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoProductsAuthorizer', {
+        //    authorizerName: 'products-authorizer',
+        //    cognitoUserPools: [this.customerPool]
+        //});
+    }
+
+    private createAdminUserPool() {
+        this.adminPool = new cognito.UserPool(this, "CognitoAdminPool", {
+            userPoolName: 'admin-pool',
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            selfSignUpEnabled: false,
+            userInvitation: {
+                emailSubject: 'Welcome do serverless e-commerce administration service.',
+                emailBody: 'Your username is {username} and your temporary password is {####}'
+            },
+            signInAliases: {
+                username: false,
+                email: true,
+            },
+            standardAttributes: {
+                email: {
+                    required: true,
+                    mutable: false
+                }
+            },
+            passwordPolicy: {
+                minLength: 8,
+                requireLowercase: true,
+                requireUppercase: true,
+                requireDigits: true,
+                requireSymbols: true,
+                tempPasswordValidity: cdk.Duration.days(1)
+            },
+            accountRecovery: cognito.AccountRecovery.EMAIL_ONLY
+        });
+
+        this.adminPool.addDomain('admin-domain', {
+            cognitoDomain: {
+                domainPrefix: 'serverless-e-commerce-admin-service'
+            }
+        })
+
+        const adminWebScope = new cognito.ResourceServerScope({
+            scopeName: 'web',
+            scopeDescription: 'Admin web'
+        });
+
+        const adminResourceService = this.adminPool.addResourceServer('AdminResourceService', {
+            identifier: 'admin',
+            userPoolResourceServerName: 'admin-resource-server',
+            scopes: [adminWebScope]
+        });
+
+        this.adminPool.addClient('admin-web-client', {
+            userPoolClientName: 'admin-web-client',
+            authFlows: { userPassword: true },
+            accessTokenValidity: cdk.Duration.minutes(60),
+            refreshTokenValidity: cdk.Duration.days(7),
+            oAuth: {
+                scopes: [
+                    cognito.OAuthScope.resourceServer(adminResourceService, adminWebScope)
+                ]
+            }
+        });
+    }
+
+    private createAuthorizer() {
         this.productAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoProductsAuthorizer', {
             authorizerName: 'products-authorizer',
-            cognitoUserPools: [this.customerPool]
+            cognitoUserPools: [this.customerPool, this.adminPool]
+        });
+
+        this.adminAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoAdminAuthorizer', {
+            authorizerName: 'admin-authorizer',
+            cognitoUserPools: [this.adminPool]
         });
     }
 }
