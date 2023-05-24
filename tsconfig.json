@@ -38,6 +38,9 @@
         ],
         "/opt/nodejs/invoice-layer": [
             "./src/applications/invoices/layers/invoices/nodejs/index"
+        ],
+        "/opt/nodejs/auth-user-info": [
+            "./src/applications/auth/layers/auth-user-info/nodejs/index"
         ]
     }
   },

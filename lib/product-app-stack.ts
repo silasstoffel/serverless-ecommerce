@@ -15,6 +15,7 @@ export class ProductAppStack extends cdk.Stack {
     public readonly productsTable: dynamodb.Table;
     private productLayer: lambda.ILayerVersion;
     private productEventsLayer: lambda.ILayerVersion;
+    private authUserInfoLayer: lambda.ILayerVersion;
 
     public constructor(
         scope: Construct,
@@ -22,9 +23,9 @@ export class ProductAppStack extends cdk.Stack {
         private readonly props: ProductAppStackProps
     ) {
       super(scope, id, props);
-      
+
       this.initLayers();
-      
+
       this.productsEventsHandler = this.buildProductEventsFunction();
 
       this.productsTable = this.buildProductsTable();
@@ -35,7 +36,7 @@ export class ProductAppStack extends cdk.Stack {
     }
 
     private setPermissions(): void {
-        // Grant PutITem from productsEventsHandler
+        // Grant PutItem from productsEventsHandler
         const police = new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: ['dynamodb:PutItem'],
@@ -53,7 +54,7 @@ export class ProductAppStack extends cdk.Stack {
         this.productsTable.grantWriteData(this.productsAdministrationHandler);
 
         // Grant invoke
-        this.productsEventsHandler.grantInvoke(this.productsAdministrationHandler);         
+        this.productsEventsHandler.grantInvoke(this.productsAdministrationHandler);
     }
 
     private buildFetchProductsFunction(): LambdaNode.NodejsFunction {
@@ -100,7 +101,11 @@ export class ProductAppStack extends cdk.Stack {
             PRODUCTS_EVENTS_FUNC_NAME: this.productsEventsHandler.functionName
           },
           runtime: lambda.Runtime.NODEJS_16_X,
-          layers: [this.productLayer, this.productEventsLayer],
+          layers: [
+            this.productLayer,
+            this.productEventsLayer,
+            this.authUserInfoLayer
+          ],
           tracing: lambda.Tracing.ACTIVE,
           // https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-extension-versionsx86-64.html
           insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
@@ -127,6 +132,9 @@ export class ProductAppStack extends cdk.Stack {
 
         const productEventsLayerArn = systemManager.StringParameter.valueForStringParameter(this, 'ProductEventsLayerVersionArn');
         this.productEventsLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'ProductEventsLayerVersionArn', productEventsLayerArn);
+
+        const authUserLayerArn = systemManager.StringParameter.valueForStringParameter(this, 'AuthUserInfoLayerVersionArn');
+        this.authUserInfoLayer = lambda.LayerVersion.fromLayerVersionArn(this, 'AuthUserInfoLayerVersionArn', authUserLayerArn);
     }
 
     private buildProductEventsFunction() {

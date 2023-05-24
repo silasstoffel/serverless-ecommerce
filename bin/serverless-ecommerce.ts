@@ -10,6 +10,7 @@ import { ProductLayerStack } from '../lib/product-layer-stack';
 import { EventAppStack } from '../lib/event-app-stack';
 import { OrderAppStack } from '../lib/order-app-stack';
 import { OrderLayerStack } from '../lib/order-layer-stack';
+import { AuthLayerStack } from '../lib/auth-layer-stack';
 import { InvoiceWSAppStack } from '../lib/invoice-ws-app-stack';
 import { InvoiceLayerStack } from '../lib/invoice-layer-stack';
 import { AuditEventBusStack } from '../lib/audit-event-bus';
@@ -35,6 +36,7 @@ const auditEventBusStack = new AuditEventBusStack(app, 'AuditEventBusStack', pro
 const auditBus = auditEventBusStack.bus;
 
 const productLayerStack = new ProductLayerStack(app, 'ProductsLayerApp', props);
+const authUserInfoLayerStack = new AuthLayerStack(app, 'AuthUserInfoLayerStack', props);
 
 const eventAppStack = new EventAppStack(app, 'EventAppStack', props);
 const eventsTable = eventAppStack.eventsTable;
@@ -42,6 +44,7 @@ const eventsTable = eventAppStack.eventsTable;
 const productAppStack = new ProductAppStack(app, 'ProductsApp', {...props, eventsTable });
 productAppStack.addDependency(productLayerStack);
 productAppStack.addDependency(eventAppStack);
+productAppStack.addDependency(authUserInfoLayerStack);
 
 const orderLayerStack = new OrderLayerStack(app, 'OrdersLayerApp', props);
 const orderAppStack = new OrderAppStack(app, 'OrderAppStack', {

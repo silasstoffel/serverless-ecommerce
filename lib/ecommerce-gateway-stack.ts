@@ -5,6 +5,7 @@ import * as cloudWatch from 'aws-cdk-lib/aws-logs';
 import * as apiGateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as iam from "aws-cdk-lib/aws-iam";
 import { StageOptions } from 'aws-cdk-lib/aws-apigateway';
 import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 
@@ -35,6 +36,9 @@ export class ECommerceGatewayStack extends cdk.Stack {
       // Routes
       this.createProductsRoutes(api);
       this.createOrdersRoutes(api);
+
+      // Policies
+      this.createPolicy();
     }
 
     private createOrdersRoutes(api: apiGateway.RestApi) {
@@ -424,6 +428,20 @@ export class ECommerceGatewayStack extends cdk.Stack {
             authorizerName: 'admin-authorizer',
             cognitoUserPools: [this.adminPool]
         });
+    }
+
+    private createPolicy() {
+        const cognitoPolicy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions:["cognito-idp:AdminGetUser"],
+            resources: [this.adminPool.userPoolArn]
+        });
+
+        const adminUserPolicy = new iam.Policy(this, "AdminGetUserPolicy", {
+            statements: [cognitoPolicy]
+        })
+
+        adminUserPolicy.attachToRole(<iam.Role> this.props.adminProductsHandler.role)
     }
 }
 
