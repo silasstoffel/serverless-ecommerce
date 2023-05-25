@@ -14,6 +14,7 @@ export class ECommerceGatewayStack extends cdk.Stack {
     public static readonly resourceName = 'ECommerceApiGateway';
     private  productAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
     private  adminAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
+    private  orderAuthorizer: apiGateway.CognitoUserPoolsAuthorizer;
     private  customerPool: cognito.UserPool;
     private  adminPool: cognito.UserPool;
 
@@ -46,10 +47,22 @@ export class ECommerceGatewayStack extends cdk.Stack {
             this.props.ordersHandler
         );
 
+        const fullAuthorizer = {
+            authorizer: this.orderAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['customer/web', 'customer/mobile', 'admin/web']
+        };
+
+        const webAuthorizer = {
+            authorizer: this.orderAuthorizer,
+            authorizationType: apiGateway.AuthorizationType.COGNITO,
+            authorizationScopes: ['customer/web', 'admin/web']
+        };
+
         const ordersResource = api.root.addResource('orders');
 
         // GET /orders?email=option&id=optional
-        ordersResource.addMethod('GET', ordersHandler);
+        ordersResource.addMethod('GET', ordersHandler, fullAuthorizer);
 
         // POST /orders
         const orderCreateValidator =  new apiGateway.RequestValidator(this, 'OrderCreateValidator', {
@@ -87,7 +100,8 @@ export class ECommerceGatewayStack extends cdk.Stack {
             requestValidator: orderCreateValidator,
             requestModels: {
                 'application/json': orderModelValidator
-            }
+            },
+            ...webAuthorizer
         });
 
         // DELETE /orders?email=required&id=required
@@ -121,7 +135,8 @@ export class ECommerceGatewayStack extends cdk.Stack {
                    'method.request.querystring.email': true,
                    'method.request.querystring.eventType': false,
                 },
-                requestValidator: orderEventsValidator
+                requestValidator: orderEventsValidator,
+                ...webAuthorizer
             }
         );
 
@@ -427,6 +442,11 @@ export class ECommerceGatewayStack extends cdk.Stack {
         this.adminAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoAdminAuthorizer', {
             authorizerName: 'admin-authorizer',
             cognitoUserPools: [this.adminPool]
+        });
+
+        this.orderAuthorizer = new apiGateway.CognitoUserPoolsAuthorizer(this, 'CognitoOrderAuthorizer', {
+            authorizerName: 'order-authorizer',
+            cognitoUserPools: [this.adminPool, this.customerPool]
         });
     }
 
