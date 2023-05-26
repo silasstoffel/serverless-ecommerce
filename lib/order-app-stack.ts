@@ -28,6 +28,7 @@ export class OrderAppStack extends cdk.Stack {
     private productLayer: lambda.ILayerVersion;
     private orderLayer: lambda.ILayerVersion;
     private orderEventLayer: lambda.ILayerVersion;
+    private authLayer: lambda.ILayerVersion;
     private orderTable: dynamodb.Table;
     private orderEventsTopic: sns.Topic;
 
@@ -183,10 +184,11 @@ export class OrderAppStack extends cdk.Stack {
           layers: [
             this.productLayer,
             this.orderLayer,
-            this.orderEventLayer
+            this.orderEventLayer,
+            this.authLayer
           ],
           tracing: lambda.Tracing.ACTIVE,
-          insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
+          //insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_143_0
         });
 
         // Creating monitors
@@ -309,6 +311,12 @@ export class OrderAppStack extends cdk.Stack {
             this,
             'OrderEventsLayerVersionArn',
             systemManager.StringParameter.valueForStringParameter(this, 'OrderEventsLayerVersionArn')
+        );
+
+        this.authLayer = lambda.LayerVersion.fromLayerVersionArn(
+            this,
+            'AuthUserInfoLayerVersionArn',
+            systemManager.StringParameter.valueForStringParameter(this, 'AuthUserInfoLayerVersionArn')
         );
     }
 

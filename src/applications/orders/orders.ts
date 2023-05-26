@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import { DynamoDB, SNS, EventBridge } from 'aws-sdk';
+import { DynamoDB, SNS, EventBridge, CognitoIdentityServiceProvider } from 'aws-sdk';
 import * as AwsXRay from 'aws-xray-sdk';
 import { v4 as uuid } from 'uuid';
 import { Product, ProductRepository } from '/opt/nodejs/products-layer';
@@ -7,6 +7,7 @@ import { OrderRepository, Order } from '/opt/nodejs/orders-layer';
 import { OrderEvent, OrderEventSchema, OrderEventType } from '/opt/nodejs/orders-events-layer';
 import { jsonResponse } from 'src/shared/response';
 import { OrderRequest, OrderResponse, OrderProductResponse } from './types/order.types';
+import { AuthInfoService } from '/opt/nodejs/auth-user-info';
 
 
 AwsXRay.captureAWS(require('aws-sdk'));
@@ -19,9 +20,11 @@ const auditBusName = process.env.AUDIT_BUS_NAME!;
 const dynamoDb = new DynamoDB.DocumentClient();
 const SNSClient = new SNS();
 const eventBridgeClient = new EventBridge();
+const cognitoIdentityServiceProvider = new CognitoIdentityServiceProvider();
 
 const productRepository = new ProductRepository(dynamoDb, productsTable);
 const orderRepository = new OrderRepository(dynamoDb, ordersTable);
+const authInfoService = new AuthInfoService(cognitoIdentityServiceProvider);
 
 export async function handler(
     event: APIGatewayProxyEvent,
@@ -45,6 +48,7 @@ export async function handler(
     }, null, 2));
 
     if (method === 'GET') {
+
         if (queryStringParams) {
             const { email, id } = queryStringParams;
             if (email && id) {
@@ -64,6 +68,11 @@ export async function handler(
                 return jsonResponse(200, response);
             }
         }
+
+        if (!authInfoService.isAdmin(event.requestContext.authorizer)) {
+            return jsonResponse(403, { code: 'OPERATION_NOT_PERMITTED', message: 'Operation not permitted.'});
+        }
+
         const orders = await orderRepository.findAll(OrderRepository.viewWithoutProduct);
         const response = orders.map((item) => convertOrderToResponse(item));
         return jsonResponse(200, response);

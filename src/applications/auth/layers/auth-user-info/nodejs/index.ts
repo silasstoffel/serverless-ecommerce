@@ -22,4 +22,14 @@ export class AuthInfoService {
 
         return email.Value;
     }
+
+    isAdmin(authorizer: APIGatewayEventDefaultAuthorizerContext): boolean {
+        const scope = authorizer?.claims.scope as string;
+
+        if (!scope) {
+            return false
+        }
+
+        return scope.search(/admin/) >=0
+    }
 }
