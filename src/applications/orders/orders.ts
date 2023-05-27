@@ -51,8 +51,14 @@ export async function handler(
 
         if (queryStringParams) {
             const { email, id } = queryStringParams;
+            const emailAuth = await authInfoService.getUserInfo(event.requestContext.authorizer);
+            const isAdmin = authInfoService.isAdmin(event.requestContext.authorizer);
+
             if (email && id) {
-                // Get specify order from an user
+                if (!isAdmin && emailAuth !== email) {
+                    return jsonResponse(403, { code: 'OPERATION_NOT_PERMITTED', message: 'Operation not permitted.'});
+                }
+
                 const order = await orderRepository.find(id, email);
                 if (!order) {
                     return jsonResponse(404, { code: 'ORDER_NOT_FOUND', message: 'Order not found.'});
@@ -62,6 +68,9 @@ export async function handler(
             }
 
             if (email && !id) {
+                if (!isAdmin && emailAuth !== email) {
+                    return jsonResponse(403, { code: 'OPERATION_NOT_PERMITTED', message: 'Operation not permitted.'});
+                }
                 // Get all orders from an user
                 const orders = await orderRepository.findByEmail(email);
                 const response = orders.map((item) => convertOrderToResponse(item));

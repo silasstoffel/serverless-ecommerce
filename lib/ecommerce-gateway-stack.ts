@@ -451,17 +451,27 @@ export class ECommerceGatewayStack extends cdk.Stack {
     }
 
     private createPolicy() {
-        const cognitoPolicy = new iam.PolicyStatement({
-            effect: iam.Effect.ALLOW,
-            actions:["cognito-idp:AdminGetUser"],
-            resources: [this.adminPool.userPoolArn]
-        });
-
         const adminUserPolicy = new iam.Policy(this, "AdminGetUserPolicy", {
-            statements: [cognitoPolicy]
+            statements: [
+                new iam.PolicyStatement({
+                    effect: iam.Effect.ALLOW,
+                    actions:["cognito-idp:AdminGetUser"],
+                    resources: [this.adminPool.userPoolArn]
+                })
+            ]
         })
-
         adminUserPolicy.attachToRole(<iam.Role> this.props.adminProductsHandler.role)
+
+        const customerUserPolicy = new iam.Policy(this, "CustomerGetUserPolicy", {
+            statements: [
+                new iam.PolicyStatement({
+                    effect: iam.Effect.ALLOW,
+                    actions:["cognito-idp:AdminGetUser"],
+                    resources: [this.customerPool.userPoolArn]
+                })
+            ]
+        })
+        customerUserPolicy.attachToRole(<iam.Role> this.props.ordersHandler.role)
     }
 }
 
